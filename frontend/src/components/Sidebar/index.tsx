@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, FileText, Folder } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, FileText, Folder, ListChecks } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -638,7 +638,21 @@ const Sidebar: React.FC = () => {
               {item.count !== undefined && (
                 <span className="ml-2 rounded-full bg-gray-100 px-1.5 text-xs text-gray-500 tabular-nums">{item.count}</span>
               )}
-              <div className="ml-auto">
+              {item.id.startsWith('project:') && (
+                <button
+                  type="button"
+                  className="ml-auto flex size-7 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-blue-600"
+                  aria-label={`Action items for ${item.title}`}
+                  title="Action items"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/project-actions?id=${encodeURIComponent(item.id.slice('project:'.length))}`);
+                  }}
+                >
+                  <ListChecks className="w-4 h-4" />
+                </button>
+              )}
+              <div className={item.id.startsWith('project:') ? '' : 'ml-auto'}>
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4 text-gray-500" />
                 ) : (

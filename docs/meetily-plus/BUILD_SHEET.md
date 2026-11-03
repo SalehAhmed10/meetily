@@ -22,6 +22,7 @@ Custom features in this fork of [Zackriya-Solutions/meetily](https://github.com/
 | 6 | Client Scope Call template | Summary template: agreed scope, out of scope, decisions, open questions, budget/timeline, client and developer action items, follow-up email draft | Template validated against the app's schema | Not in the repo: `%APPDATA%\Meetily\templates\client_scope_call.json` (shared with the official app) |
 | 7 | Import `.docx` | Teams and Google Meet (Google Doc) transcript downloads import directly: one line per paragraph, then the same time and speaker reading as `.txt`. `Name   0:03` header lines followed by the words become `Name:` with that time; files of `start --> end` cue timings are read as VTT cues, with the speaker line after each timing becoming `Name:`. Layouts are from memory of Teams/Meet exports; both were imported in the app from generated sample files, not yet from a real export | 4 tests (Word XML with entities, tables and breaks; a real zipped `.docx`; cue layout; speaker-header layout, and notes left alone) | Fork only |
 | 8 | Auto-file into projects | A meeting with no project goes into the project named in its title, as a whole word, ignoring case, longest name first ("Acme Mobile kickoff" -> Acme Mobile), then the one earlier in the title. Runs when a meeting is recorded, imported or renamed, including the title the AI summary gives it, and when a project is created or renamed (only meetings naming that project). A meeting that has a project is never moved. Choosing "No project" is not remembered: a later rename or summary can file it again | 5 tests, including rename on a one-connection database (no deadlock) and the import path; checked in the app (renaming a meeting to "Acme kickoff" filed it into Acme) | Fork only |
+| 9 | Project action items | Checklist icon on a sidebar project folder opens one list of the project's action items, collected from every completed summary: the Action Items table (owner, task, due, transcript time) or any list under a heading with "action item" in it ("Client Action Items" makes Client the owner). Grouped by meeting, newest first; tick to mark done, "Show done" brings them back. Ticks are stored in a new `action_item_status` table keyed by meeting and task text, so a regenerated summary with reworded tasks starts unticked | 4 Rust tests (real table shape, lists with heading owners, duplicates and done state, ticks on the real migrations) and 3 frontend tests | Fork only |
 
 ## Fork-only setup (not features)
 
@@ -57,10 +58,10 @@ Custom features in this fork of [Zackriya-Solutions/meetily](https://github.com/
 | 2026-11-03 | `b6241d8` | feat(projects): group meetings by client/project |
 | 2026-11-03 | `d756acf` | feat(projects): picker inline in the transcript toolbar, folder icon and count badge in the sidebar; this build sheet |
 | 2026-11-03 | `ef29f5e` | feat(import): `.docx` transcripts; feat(projects): auto-file meetings into the project named in their title |
-| 2026-11-03 | (this commit) | feat(projects): creating or renaming a project files existing meetings that name it; fix(import): `Name:` after the speaker in Teams cue layout |
+| 2026-11-03 | `b32a5c6` | feat(projects): creating or renaming a project files existing meetings that name it; fix(import): `Name:` after the speaker in Teams cue layout |
+| 2026-11-03 | (this commit) | feat(projects): action items page per project, ticked off and remembered |
 
 ## Next
 
 - **Ask a project:** ask questions across one client's meetings, answered by the local model with the call and timestamp each point came from. Needs Projects (done).
-- **Open action items per project:** one checklist per client, collected from each summary's action items.
 - Later: speaker names per project, client recap export, scope timeline, meeting hours per project.

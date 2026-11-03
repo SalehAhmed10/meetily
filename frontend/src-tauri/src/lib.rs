@@ -49,6 +49,7 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod action_items;
 pub mod projects;
 pub mod state;
 pub mod summary;
@@ -719,6 +720,8 @@ pub fn run() {
             projects::api_rename_project,
             projects::api_delete_project,
             projects::api_set_meeting_project,
+            action_items::api_get_project_action_items,
+            action_items::api_set_action_item_done,
             api::api_search_transcripts,
             api::api_get_profile,
             api::api_save_profile,
