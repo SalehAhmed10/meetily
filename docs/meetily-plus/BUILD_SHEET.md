@@ -26,6 +26,7 @@ Custom features in this fork of [Zackriya-Solutions/meetily](https://github.com/
 | 10 | One-line sidebar titles | Meeting titles in the sidebar stay on one line with "..." and show in full on hover. The edit/delete buttons float over the row end on hover or keyboard focus instead of reserving a third of the width, which is what made titles wrap onto 3-4 lines. Focus rings on the sidebar and action-items controls; action-items heading no longer has a label above it | tsc, frontend tests, Impeccable design detector (no findings in changed rows); checked in the app | Fork only |
 | 11 | Summary to PDF | PDF button in the summary toolbar: the summary (with unsaved edits) becomes an A4 page with the meeting title and date, tables kept; you choose where to save and Edge/Chrome prints it in the background. The page may load nothing (Content-Security-Policy, no images, browser started with DNS disabled), since the summary is model output from possibly imported text | 2 Rust tests (one renders a real PDF with Edge on this PC), HTML test | Fork only |
 | 12 | Email follow-up | Email button opens your mail app with the summary's "Follow-up Email Draft" section (or the whole summary) as the body and the meeting title as subject; you add the recipient and send. The full text is also copied, since mail links cut off near 2,000 characters. Links now open through `rundll32 url.dll,FileProtocolHandler` instead of `cmd /C start`, which split URLs at `&` | 4 frontend tests (draft section, encoding of `&`, long-body cut) | Fork only |
+| 13 | Project timeline, emails and stages | The project button on a sidebar folder opens a project page with two tabs. **Timeline**: meetings and emails in date order, grouped by stage ("Round 1", "Phase 2"); a stage chip on each row sets it, offering stages used before. **Action items**: the list from row 9. **Add email**: paste an email or load a saved .eml/.txt; subject, sender and date are read from its headers (incl. encoded subjects, quoted-printable/base64, multipart, Outlook's copied From/Sent/Subject block); it is stored as a meeting of kind email, so search, summaries and action items work on it. Migration adds `meetings.kind` and `meetings.stage` | 2 Rust tests (emails and stages on the real migrations), 8 frontend tests (email parsing, stage grouping) | Fork only |
 
 ## Fork-only setup (not features)
 
@@ -65,9 +66,11 @@ Custom features in this fork of [Zackriya-Solutions/meetily](https://github.com/
 | 2026-11-03 | `d3f357b`, `305b728` | feat(projects): action items page per project, ticked off and remembered |
 | 2026-11-03 | `2331cf7` | polish(ui): one-line sidebar titles, floating row actions, focus rings |
 | 2026-11-03 | `55acccf` | feat(summary): PDF export and email follow-up; fix: open links containing `&` on Windows; fix(projects): "Pending" due dates read as none |
-| 2026-11-03 | (this commit) | fix(security): PDF export page cannot fetch anything (CSP, images dropped, no DNS); found by the automated security review |
+| 2026-11-03 | `15a6480` | fix(security): PDF export page cannot fetch anything (CSP, images dropped, no DNS); found by the automated security review |
+| 2026-11-03 | (this commit) | feat(projects): project page with timeline, emails and stages |
 
 ## Next
 
 - **Ask a project:** ask questions across one client's meetings, answered by the local model with the call and timestamp each point came from. Needs Projects (done).
-- Later: speaker names per project, client recap export, scope timeline, meeting hours per project.
+- **Project brief and next-round prep:** the local model reads a project's summaries and emails in order and writes status, stage outcomes and a prep checklist. Pairs with Ask a project (fresh session).
+- Later: speaker names per project, meeting hours per project.

@@ -51,6 +51,7 @@ pub mod openrouter;
 pub mod parakeet_engine;
 pub mod action_items;
 pub mod summary_export;
+pub mod timeline;
 pub mod projects;
 pub mod state;
 pub mod summary;
@@ -724,6 +725,9 @@ pub fn run() {
             action_items::api_get_project_action_items,
             action_items::api_set_action_item_done,
             summary_export::export_summary_pdf,
+            timeline::api_get_project_timeline,
+            timeline::api_set_meeting_stage,
+            timeline::api_add_project_email,
             api::api_search_transcripts,
             api::api_get_profile,
             api::api_save_profile,
