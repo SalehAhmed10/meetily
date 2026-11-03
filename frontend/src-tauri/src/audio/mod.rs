@@ -51,7 +51,7 @@ pub mod retranscription;
 // Import module (import external audio files as new meetings)
 pub mod import;
 
-// Transcript import (create a meeting from an existing .txt/.md/.srt/.vtt transcript)
+// Transcript import (create a meeting from an existing .txt/.md/.srt/.vtt/.docx transcript)
 pub mod transcript_import;
 
 pub use devices::{

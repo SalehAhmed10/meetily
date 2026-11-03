@@ -14,7 +14,7 @@ interface TranscriptImportResult {
   duration_seconds: number;
 }
 
-/** Pick a .txt/.md/.srt/.vtt transcript, save it as a meeting, and open it. */
+/** Pick a .txt/.md/.srt/.vtt/.docx transcript, save it as a meeting, and open it. */
 export function useImportTranscript() {
   const router = useRouter();
   const { refetchMeetings } = useSidebar();

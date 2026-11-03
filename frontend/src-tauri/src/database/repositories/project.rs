@@ -75,6 +75,62 @@ impl ProjectsRepository {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+
+    /// Files a meeting that has no project into the project whose name appears in its title
+    /// ("Zaroba weekly sync" -> Zaroba). Never moves a meeting that already has a project.
+    /// Returns the project id it was filed into.
+    pub async fn auto_assign(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let title: Option<String> =
+            sqlx::query_scalar("SELECT title FROM meetings WHERE id = ? AND project_id IS NULL")
+                .bind(meeting_id)
+                .fetch_optional(pool)
+                .await?;
+        let Some(title) = title else {
+            return Ok(None);
+        };
+        let projects = Self::list(pool).await?;
+        let Some(project) = project_named_in(&title, &projects) else {
+            return Ok(None);
+        };
+        // A project set by hand between the SELECT and here is kept, and nothing was filed
+        let filed =
+            sqlx::query("UPDATE meetings SET project_id = ? WHERE id = ? AND project_id IS NULL")
+                .bind(&project.id)
+                .bind(meeting_id)
+                .execute(pool)
+                .await?
+                .rows_affected()
+                > 0;
+        Ok(filed.then(|| project.id.clone()))
+    }
+}
+
+/// The project whose name appears in the title as a whole word, ignoring case. The longest
+/// name wins ("Acme Mobile" beats "Acme"); between names of equal length, the one earlier in
+/// the title.
+fn project_named_in<'a>(title: &str, projects: &'a [Project]) -> Option<&'a Project> {
+    let title = title.to_lowercase();
+    let is_word = |c: char| c.is_alphanumeric();
+    projects
+        .iter()
+        .filter_map(|p| {
+            let name = p.name.trim().to_lowercase();
+            if name.is_empty() {
+                return None;
+            }
+            // Every start, not match_indices: that skips overlapping matches
+            let at = title.char_indices().map(|(i, _)| i).find(|&i| {
+                title[i..].starts_with(&name)
+                    && !title[..i].chars().next_back().is_some_and(is_word)
+                    && !title[i + name.len()..].chars().next().is_some_and(is_word)
+            })?;
+            Some((name.chars().count(), std::cmp::Reverse(at), p))
+        })
+        .max_by_key(|&(len, at, _)| (len, at))
+        .map(|(_, _, p)| p)
 }
 
 #[cfg(test)]
@@ -162,5 +218,105 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(meetings, 1);
+    }
+
+    fn project(name: &str) -> Project {
+        Project {
+            id: name.to_string(),
+            name: name.to_string(),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn finds_the_longest_project_named_as_a_whole_word() {
+        let projects = [
+            project("Acme"),
+            project("Acme Mobile"),
+            project("AI"),
+            project("C++"),
+        ];
+        let named = |title: &str| project_named_in(title, &projects).map(|p| p.name.as_str());
+        assert_eq!(named("acme weekly sync"), Some("Acme"));
+        assert_eq!(named("Kickoff - ACME MOBILE app"), Some("Acme Mobile"));
+        assert_eq!(named("Email triage"), None); // "AI" inside a word
+        assert_eq!(named("Acmeville call"), None);
+        assert_eq!(named("C++ review"), Some("C++"));
+        assert_eq!(named("Meeting 2026-11-03"), None);
+
+        // Sorted as list() returns them; the old max_by_key picked the last tie (Beta)
+        let projects = [project("Acme"), project("ab ab"), project("Beta")];
+        let named = |title: &str| project_named_in(title, &projects).map(|p| p.name.as_str());
+        assert_eq!(named("Acme Beta sync"), Some("Acme")); // same length: earlier in the title
+        assert_eq!(named("xab ab ab"), Some("ab ab")); // overlapping match after a failed one
+    }
+
+    #[tokio::test]
+    async fn auto_assign_files_only_meetings_without_a_project() {
+        let pool = pool_with_meeting().await;
+        sqlx::query("UPDATE meetings SET title = 'Zaroba weekly sync' WHERE id = 'meeting-1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            ProjectsRepository::auto_assign(&pool, "meeting-1")
+                .await
+                .unwrap(),
+            None
+        );
+
+        let zaroba = ProjectsRepository::create(&pool, "Zaroba").await.unwrap();
+        assert_eq!(
+            ProjectsRepository::auto_assign(&pool, "meeting-1")
+                .await
+                .unwrap(),
+            Some(zaroba.id.clone())
+        );
+        assert_eq!(
+            project_of(&pool, "meeting-1").await,
+            Some(zaroba.id.clone())
+        );
+
+        // A project chosen by hand is never overridden
+        let other = ProjectsRepository::create(&pool, "Weekly").await.unwrap();
+        ProjectsRepository::set_meeting_project(&pool, "meeting-1", Some(&other.id))
+            .await
+            .unwrap();
+        assert_eq!(
+            ProjectsRepository::auto_assign(&pool, "meeting-1")
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(project_of(&pool, "meeting-1").await, Some(other.id));
+        assert_eq!(
+            ProjectsRepository::auto_assign(&pool, "missing")
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn renaming_a_meeting_files_it() {
+        use crate::database::repositories::meeting::MeetingsRepository;
+        let pool = pool_with_meeting().await; // one connection: also proves no deadlock
+        let acme = ProjectsRepository::create(&pool, "Acme").await.unwrap();
+        assert!(
+            MeetingsRepository::update_meeting_title(&pool, "meeting-1", "Acme kickoff")
+                .await
+                .unwrap()
+        );
+        assert_eq!(project_of(&pool, "meeting-1").await, Some(acme.id.clone()));
+
+        ProjectsRepository::set_meeting_project(&pool, "meeting-1", None)
+            .await
+            .unwrap();
+        assert!(
+            MeetingsRepository::update_meeting_name(&pool, "meeting-1", "Acme scope call")
+                .await
+                .unwrap()
+        );
+        assert_eq!(project_of(&pool, "meeting-1").await, Some(acme.id));
     }
 }

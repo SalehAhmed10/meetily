@@ -4,6 +4,7 @@ use crate::api::TranscriptSegment;
 use crate::audio::decoder::{decode_audio_file, decode_audio_file_with_progress};
 use crate::audio::vad::get_speech_chunks_with_progress;
 use crate::config::{DEFAULT_WHISPER_MODEL, DEFAULT_PARAKEET_MODEL};
+use crate::database::repositories::project::ProjectsRepository;
 use crate::parakeet_engine::ParakeetEngine;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
@@ -738,6 +739,10 @@ pub(super) async fn create_meeting_with_transcripts(
     tx.commit()
         .await
         .map_err(|e| anyhow!("Failed to commit transaction: {}", e))?;
+    drop(conn);
+    if let Err(e) = ProjectsRepository::auto_assign(pool, &meeting_id).await {
+        warn!("Could not file meeting into a project: {}", e);
+    }
 
     info!(
         "Created meeting '{}' with {} transcripts",

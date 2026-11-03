@@ -1,8 +1,9 @@
 use crate::api::{MeetingDetails, MeetingTranscript};
 use crate::database::models::{MeetingModel, Transcript};
+use crate::database::repositories::project::ProjectsRepository;
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqliteConnection, SqlitePool};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct MeetingsRepository;
 
@@ -193,6 +194,10 @@ impl MeetingsRepository {
             return Ok(false);
         }
         transaction.commit().await?;
+        drop(conn);
+        if let Err(e) = ProjectsRepository::auto_assign(pool, meeting_id).await {
+            warn!("Could not file meeting into a project: {}", e);
+        }
         Ok(true)
     }
 
@@ -226,6 +231,9 @@ impl MeetingsRepository {
             .await?;
 
         transaction.commit().await?;
+        if let Err(e) = ProjectsRepository::auto_assign(pool, meeting_id).await {
+            warn!("Could not file meeting into a project: {}", e);
+        }
         Ok(true)
     }
 }

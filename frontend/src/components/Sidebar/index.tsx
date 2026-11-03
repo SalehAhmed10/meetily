@@ -66,6 +66,7 @@ const Sidebar: React.FC = () => {
     isSearching,
     meetings,
     setMeetings,
+    refetchMeetings,
     serverAddress
   } = useSidebar();
 
@@ -407,6 +408,7 @@ const Sidebar: React.FC = () => {
         m.id === meetingId ? { ...m, title: newTitle } : m
       );
       setMeetings(updatedMeetings);
+      void refetchMeetings(); // the new title may have filed it into a project
 
       // Update current meeting if it's the one being edited
       if (currentMeeting?.id === meetingId) {

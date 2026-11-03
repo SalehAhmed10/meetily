@@ -1,7 +1,8 @@
 use crate::api::{TranscriptSearchResult, TranscriptSegment};
+use crate::database::repositories::project::ProjectsRepository;
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqlitePool};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 pub struct TranscriptsRepository;
@@ -78,6 +79,10 @@ impl TranscriptsRepository {
 
         // Commit the transaction
         transaction.commit().await?;
+        drop(conn);
+        if let Err(e) = ProjectsRepository::auto_assign(pool, &meeting_id).await {
+            warn!("Could not file meeting into a project: {}", e);
+        }
 
         Ok(meeting_id)
     }
