@@ -1,7 +1,8 @@
+use std::ffi::CString;
 use std::io::{self, BufRead, Write};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -258,6 +259,25 @@ fn calculate_gpu_layers(
     layers
 }
 
+/// Ask llama.cpp to choose GPU offload from the model metadata and free device memory,
+/// using the same n_ctx / n_batch that `generate` creates its context with.
+fn fit_gpu_offload(
+    params: Pin<&mut LlamaModelParams>,
+    model_path: &PathBuf,
+    context_size: u32,
+) -> Result<()> {
+    let n_ctx = NonZeroU32::new(context_size).context("Invalid ctx size")?;
+    let mut cparams = LlamaContextParams::default()
+        .with_n_ctx(Some(n_ctx))
+        .with_n_batch(context_size);
+    let path = CString::new(model_path.to_string_lossy().as_bytes())?;
+    // Keep 512 MB free per device for the OS/display, matching the heuristic's safety buffer
+    let mut margins = vec![512 * 1024 * 1024; llama_cpp_2::max_devices()];
+    // 3 = GGML_LOG_LEVEL_WARN (ggml_log_level is a c_int alias that llama-cpp-2 doesn't re-export)
+    params.fit_params(&path, &mut cparams, &mut margins, context_size, 3)?;
+    Ok(())
+}
+
 /// Get default GPU layer count with smart detection
 fn get_default_gpu_layers(model_path: &PathBuf, context_size: u32) -> u32 {
     let vram = detect_vram_gb();
@@ -326,12 +346,20 @@ impl ModelState {
 
         eprintln!("📥 Loading model: {}", model_path.display());
 
-        // Detect GPU layers
-        let gpu_layers = get_default_gpu_layers(&model_path, context_size);
-
-        // Configure model parameters with GPU offload
-        let model_params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
-        let model_params = pin!(model_params);
+        // Let llama.cpp size the GPU offload from the model's real layer/KV sizes and each
+        // device's free memory; fall back to the file-size heuristic if fitting fails.
+        let mut model_params = pin!(LlamaModelParams::default());
+        match fit_gpu_offload(model_params.as_mut(), &model_path, context_size) {
+            Ok(()) => eprintln!(
+                "✅ GPU offload fitted by llama.cpp: n_gpu_layers = {}",
+                model_params.n_gpu_layers()
+            ),
+            Err(e) => {
+                let gpu_layers = get_default_gpu_layers(&model_path, context_size);
+                eprintln!("⚠️ Offload fitting failed ({e}), using heuristic: {gpu_layers} layers");
+                model_params.set(LlamaModelParams::default().with_n_gpu_layers(gpu_layers));
+            }
+        }
 
         let model = LlamaModel::load_from_file(&self.backend, model_path.clone(), &model_params)
             .with_context(|| format!("unable to load model at {:?}", model_path))?;
