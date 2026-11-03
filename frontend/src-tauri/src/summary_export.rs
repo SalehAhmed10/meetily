@@ -65,15 +65,22 @@ fn print_to_pdf(browser: &Path, html: &str, target: &Path) -> Result<(), String>
         .arg(url.as_str())
         .output()
         .map_err(|e| format!("Could not start {}: {e}", browser.display()))?;
-    if target.exists() {
-        Ok(())
-    } else {
-        Err(format!(
-            "The PDF was not created ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
+    // Edge can hand the job to another process and exit first; give the file a moment to appear
+    for _ in 0..20 {
+        if target.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
+    let detail = format!(
+        "{} with {:?}; stdout: {}; stderr: {}",
+        output.status,
+        browser,
+        String::from_utf8_lossy(&output.stdout).trim(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    log::warn!("PDF export: no file after printing: {detail}");
+    Err(format!("The PDF was not created ({detail})"))
 }
 
 /// Asks where to save, then writes the summary PDF there. Returns the saved path, or None

@@ -22,13 +22,34 @@ blockquote { margin: 8pt 0; padding: 2pt 10pt; border-left: 1px solid #93c5fd; c
 a { color: #1d4ed8; }
 `;
 
+// The page may load nothing: the summary is model output from possibly imported text
+const PAGE_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`;
+
+/**
+ * Opens the system print window for a standalone page, through a hidden frame that cannot run
+ * scripts; "Save as PDF" is one of its printers. Used when the direct PDF save fails.
+ */
+export function printPage(html: string): void {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('sandbox', 'allow-same-origin allow-modals');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  frame.onload = () => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    setTimeout(() => frame.remove(), 60_000);
+  };
+  frame.srcdoc = html;
+  document.body.appendChild(frame);
+}
+
 /** The summary as a standalone, print-ready HTML page (title, date, then the summary) */
 export function summaryHtmlDocument(title: string, date: string, markdown: string): string {
   // No images: the summary is model output, and an image URL in it would be fetched
   const body = renderToStaticMarkup(
     <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['img']}>{markdown}</ReactMarkdown>,
   );
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+  return `<!doctype html><html><head><meta charset="utf-8">${PAGE_CSP}<title>${escapeHtml(title)}</title>
 <style>${PRINT_CSS}</style></head><body>
 <header><h1>${escapeHtml(title)}</h1><p>${escapeHtml(date)}</p></header>
 ${body}</body></html>`;

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { hasVisibleSummaryContent } from '@/lib/summary-content';
-import { followUpEmailDraft, mailtoUrl, markdownToPlainText, summaryHtmlDocument } from '@/lib/summary-share';
+import { followUpEmailDraft, mailtoUrl, markdownToPlainText, printPage, summaryHtmlDocument } from '@/lib/summary-share';
 
 interface UseCopyOperationsProps {
   meeting: any;
@@ -214,13 +214,16 @@ export function useCopyOperations({
       return;
     }
     const toastId = toast.loading('Creating PDF…');
+    const html = summaryHtmlDocument(meetingTitle, meetingDate(), markdown);
     try {
-      const html = summaryHtmlDocument(meetingTitle, meetingDate(), markdown);
       const saved = await invokeTauri<string | null>('export_summary_pdf', { html, fileName: meetingTitle });
       if (saved) toast.success('PDF saved', { id: toastId, description: saved });
       else toast.dismiss(toastId); // save dialog cancelled
     } catch (error) {
-      toast.error('Could not create the PDF', { id: toastId, description: String(error) });
+      // The direct save runs Edge/Chrome in the background; when that fails, print in-app instead
+      console.warn('Direct PDF save failed, opening the print window:', error);
+      toast.info('Choose "Save as PDF" in the print window', { id: toastId, description: 'The direct save did not work here.' });
+      printPage(html);
     }
   }, [getSummaryMarkdown, meetingTitle, meetingDate]);
 
