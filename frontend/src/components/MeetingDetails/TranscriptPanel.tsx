@@ -4,7 +4,7 @@ import { Transcript, TranscriptSegmentData } from '@/types';
 import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
-import { useMemo } from 'react';
+import { useMemo, ReactNode } from 'react';
 
 interface TranscriptPanelProps {
   transcripts: Transcript[];
@@ -28,6 +28,8 @@ interface TranscriptPanelProps {
   meetingId?: string;
   meetingFolderPath?: string | null;
   onRefetchTranscripts?: () => Promise<void>;
+  /** Rendered beside the transcript actions (e.g. the project picker) */
+  headerSlot?: ReactNode;
 }
 
 export function TranscriptPanel({
@@ -48,6 +50,7 @@ export function TranscriptPanel({
   meetingId,
   meetingFolderPath,
   onRefetchTranscripts,
+  headerSlot,
 }: TranscriptPanelProps) {
   // Convert transcripts to segments if pagination is not used but we want virtualization
   const convertedSegments = useMemo(() => {
@@ -68,6 +71,7 @@ export function TranscriptPanel({
     <div className="flex h-full min-w-0 w-full bg-white flex-col relative @container">
       {/* Title area */}
       <div className="p-4 border-b border-gray-200">
+        {headerSlot && <div className="mb-2 flex justify-center">{headerSlot}</div>}
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}

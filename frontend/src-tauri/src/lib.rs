@@ -49,6 +49,7 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod projects;
 pub mod state;
 pub mod summary;
 pub mod tray;
@@ -713,6 +714,11 @@ pub fn run() {
             anthropic::anthropic::get_anthropic_models,
             groq::groq::get_groq_models,
             api::api_get_meetings,
+            projects::api_list_projects,
+            projects::api_create_project,
+            projects::api_rename_project,
+            projects::api_delete_project,
+            projects::api_set_meeting_project,
             api::api_search_transcripts,
             api::api_get_profile,
             api::api_save_profile,

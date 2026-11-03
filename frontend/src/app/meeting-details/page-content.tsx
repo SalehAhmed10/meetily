@@ -18,6 +18,7 @@ import { useTemplates } from '@/hooks/meeting-details/useTemplates';
 import { useCopyOperations } from '@/hooks/meeting-details/useCopyOperations';
 import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
 import { useConfig } from '@/contexts/ConfigContext';
+import { ProjectPicker } from '@/components/MeetingDetails/ProjectPicker';
 
 export default function PageContent({
   meeting,
@@ -218,6 +219,7 @@ export default function PageContent({
               meetingId={meeting.id}
               meetingFolderPath={meeting.folder_path}
               onRefetchTranscripts={onRefetchTranscripts}
+              headerSlot={<ProjectPicker meetingId={meeting.id} />}
             />
           }
           summary={

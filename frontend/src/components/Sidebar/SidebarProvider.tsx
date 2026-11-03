@@ -19,6 +19,36 @@ interface SidebarItem {
 export interface CurrentMeeting {
   id: string;
   title: string;
+  project_id?: string | null;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+/** Sidebar folder id for a project; meetings are listed inside it */
+export const projectFolderId = (projectId: string) => `project:${projectId}`;
+
+/**
+ * One folder per project that has meetings (in project order), then meetings with no
+ * project, each list keeping the meetings' own order. No projects -> the same flat list as before.
+ */
+export function groupMeetingsByProject(meetings: CurrentMeeting[], projects: Project[]): SidebarItem[] {
+  const toFile = (m: CurrentMeeting): SidebarItem => ({ id: m.id, title: m.title, type: 'file' });
+  const known = new Set(projects.map(p => p.id));
+  const folders = projects
+    .map(p => ({ project: p, files: meetings.filter(m => m.project_id === p.id).map(toFile) }))
+    .filter(({ files }) => files.length > 0)
+    .map(({ project, files }): SidebarItem => ({
+      id: projectFolderId(project.id),
+      title: `${project.name} (${files.length})`,
+      type: 'folder',
+      children: files,
+    }));
+  const unassigned = meetings.filter(m => !m.project_id || !known.has(m.project_id)).map(toFile);
+  return [...folders, ...unassigned];
 }
 
 // Search result type for transcript search
@@ -43,6 +73,7 @@ interface SidebarContextType {
   toggleCollapse: () => void;
   meetings: CurrentMeeting[];
   setMeetings: (meetings: CurrentMeeting[]) => void;
+  projects: Project[];
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;
@@ -79,6 +110,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [currentMeeting, setCurrentMeeting] = useState<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [meetings, setMeetings] = useState<CurrentMeeting[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -97,10 +129,11 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const fetchMeetings = React.useCallback(async () => {
     if (serverAddress) {
       try {
-        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string }>;
+        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string, project_id?: string | null }>;
         const transformedMeetings = meetings.map((meeting: any) => ({
           id: meeting.id,
-          title: meeting.title
+          title: meeting.title,
+          project_id: meeting.project_id ?? null,
         }));
         setMeetings(transformedMeetings);
         Analytics.trackBackendConnection(true);
@@ -108,6 +141,13 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         console.error('Error fetching meetings:', error);
         setMeetings([]);
         Analytics.trackBackendConnection(false, error instanceof Error ? error.message : 'Unknown error');
+      }
+      // Separate from meetings so a projects failure never hides the meeting list
+      try {
+        setProjects(await invoke<Project[]>('api_list_projects'));
+      } catch (error) {
+        console.error('Error fetching projects:', error);
+        setProjects([]);
       }
     }
   }, [serverAddress]);
@@ -129,9 +169,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       id: 'meetings',
       title: 'Meeting Notes',
       type: 'folder' as const,
-      children: [
-        ...meetings.map(meeting => ({ id: meeting.id, title: meeting.title, type: 'file' as const }))
-      ]
+      children: groupMeetingsByProject(meetings, projects),
     },
   ];
 
@@ -148,10 +186,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     setSidebarItems(baseItems);
   }, [pathname]);
 
-  // Update sidebar items when meetings change
+  // Update sidebar items when meetings or projects change
   useEffect(() => {
     setSidebarItems(baseItems);
-  }, [meetings]);
+  }, [meetings, projects]);
 
   // Function to handle recording toggle from sidebar
   const handleRecordingToggle = () => {
@@ -303,6 +341,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       toggleCollapse,
       meetings,
       setMeetings,
+      projects,
       isMeetingActive,
       setIsMeetingActive,
       handleRecordingToggle,

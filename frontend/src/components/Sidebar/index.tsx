@@ -40,6 +40,16 @@ interface SidebarItem {
   children?: SidebarItem[];
 }
 
+/** Keep matching meetings; keep a project folder whole if its name matches, else with its matching meetings */
+function filterMeetingTree(items: SidebarItem[], matches: (item: SidebarItem) => boolean): SidebarItem[] {
+  return items.flatMap(item => {
+    if (matches(item)) return [item];
+    if (item.type !== 'folder') return [];
+    const children = filterMeetingTree(item.children ?? [], matches);
+    return children.length > 0 ? [{ ...item, children }] : [];
+  });
+}
+
 const Sidebar: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
@@ -273,7 +283,7 @@ const Sidebar: React.FC = () => {
             if (!folder.children) return folder;
 
             // Filter children based on search results or title match
-            const filteredChildren = folder.children.filter(item => {
+            const filteredChildren = filterMeetingTree(folder.children, item => {
               // Include if the meeting ID is in our search results
               if (matchedMeetingIds.has(item.id)) return true;
 
@@ -302,7 +312,7 @@ const Sidebar: React.FC = () => {
             if (!folder.children) return folder;
 
             // Filter children based on search query
-            const filteredChildren = folder.children.filter(item =>
+            const filteredChildren = filterMeetingTree(folder.children, item =>
               item.title.toLowerCase().includes(searchQuery.toLowerCase())
             );
 
@@ -422,6 +432,17 @@ const Sidebar: React.FC = () => {
     setEditModalState({ isOpen: false, meetingId: null, currentTitle: '' });
     setEditingTitle('');
   };
+
+  // Project folders start expanded the first time they appear; after that the user's toggle sticks
+  const seenProjectFoldersRef = React.useRef(new Set<string>());
+  useEffect(() => {
+    const newFolders = (sidebarItems.find(item => item.id === 'meetings')?.children ?? [])
+      .filter(item => item.type === 'folder' && !seenProjectFoldersRef.current.has(item.id))
+      .map(item => item.id);
+    if (newFolders.length === 0) return;
+    newFolders.forEach(id => seenProjectFoldersRef.current.add(id));
+    setExpandedFolders(prev => new Set([...prev, ...newFolders]));
+  }, [sidebarItems]);
 
   const toggleFolder = (folderId: string) => {
     // Normal toggle behavior for all folders

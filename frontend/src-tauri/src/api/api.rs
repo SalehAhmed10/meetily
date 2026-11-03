@@ -30,6 +30,8 @@ pub struct ApiResponse<T> {
 pub struct Meeting {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -341,6 +343,7 @@ pub async fn api_get_meetings<R: Runtime>(
                 .map(|m| Meeting {
                     id: m.id,
                     title: m.title,
+                    project_id: m.project_id,
                 })
                 .collect();
             Ok(result)
