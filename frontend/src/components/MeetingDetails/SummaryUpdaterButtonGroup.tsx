@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
-import { Copy, Save, Loader2 } from 'lucide-react';
+import { Copy, Save, Loader2, FileDown, Mail } from 'lucide-react';
 import Analytics from '@/lib/analytics';
 
 interface SummaryUpdaterButtonGroupProps {
@@ -10,6 +10,8 @@ interface SummaryUpdaterButtonGroupProps {
   isDirty: boolean;
   onSave: () => Promise<void>;
   onCopy: () => Promise<void>;
+  onExportPdf: () => Promise<void>;
+  onEmail: () => Promise<void>;
 }
 
 export function SummaryUpdaterButtonGroup({
@@ -17,6 +19,8 @@ export function SummaryUpdaterButtonGroup({
   isDirty,
   onSave,
   onCopy,
+  onExportPdf,
+  onEmail,
 }: SummaryUpdaterButtonGroupProps) {
   return (
     <ButtonGroup>
@@ -60,6 +64,15 @@ export function SummaryUpdaterButtonGroup({
         <span className="hidden @[40rem]:inline">Copy</span>
       </Button>
 
+      <Button variant="outline" size="sm" title="Save as PDF" onClick={() => void onExportPdf()} className="cursor-pointer">
+        <FileDown />
+        <span className="hidden @[40rem]:inline">PDF</span>
+      </Button>
+
+      <Button variant="outline" size="sm" title="Email follow-up or summary" onClick={() => void onEmail()} className="cursor-pointer">
+        <Mail />
+        <span className="hidden @[40rem]:inline">Email</span>
+      </Button>
     </ButtonGroup>
   );
 }

@@ -66,7 +66,15 @@ fn clean(cell: &str) -> Option<String> {
     let text = cell.replace("**", "").trim().to_string();
     let empty = matches!(
         text.to_lowercase().as_str(),
-        "" | "-" | "n/a" | "na" | "none" | "tbd"
+        "" | "-"
+            | "n/a"
+            | "na"
+            | "none"
+            | "tbd"
+            | "tbc"
+            | "pending"
+            | "not specified"
+            | "unspecified"
     );
     (!empty).then_some(text)
 }
@@ -296,7 +304,7 @@ mod tests {
             | **Owner** | Task | Due | Reference Transcript Segment | Segment Time stamp |\n\
             | :--- | --- | --- | --- | --- |\n\
             | Saleh Ahmed | Send **written** scope | Friday | \"[02:52] I'll send it\" | 02:52 |\n\
-            | Priya | Share brand assets | N/A | \"...\" | 03:10 |\n\
+            | Priya | Share brand assets | Pending | \"...\" | 03:10 |\n\
             | | | | | |\n\n\
             **Discussion Highlights**\n- Not an action item\n";
         assert_eq!(

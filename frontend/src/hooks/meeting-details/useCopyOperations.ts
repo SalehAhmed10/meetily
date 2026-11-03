@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Analytics from '@/lib/analytics';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { hasVisibleSummaryContent } from '@/lib/summary-content';
+import { followUpEmailDraft, mailtoUrl, markdownToPlainText, summaryHtmlDocument } from '@/lib/summary-share';
 
 interface UseCopyOperationsProps {
   meeting: any;
@@ -105,13 +106,8 @@ export function useCopyOperations({
     });
   }, [meeting, meetingTitle, fetchAllTranscripts]);
 
-  // Copy summary to clipboard
-  const handleCopySummary = useCallback(async () => {
-    if (!hasVisibleSummaryContent(aiSummary)) {
-      toast.error('No summary content available to copy');
-      return;
-    }
-    try {
+  // The summary as markdown, including unsaved edits in the editor; '' when there is none
+  const getSummaryMarkdown = useCallback(async (): Promise<string> => {
       let summaryMarkdown = '';
 
       console.log('🔍 Copy Summary - Starting...');
@@ -153,6 +149,17 @@ export function useCopyOperations({
         summaryMarkdown = sections;
         console.log('📝 Converted legacy format, length:', summaryMarkdown.length);
       }
+      return summaryMarkdown;
+  }, [aiSummary, blockNoteSummaryRef]);
+
+  // Copy summary to clipboard
+  const handleCopySummary = useCallback(async () => {
+    if (!hasVisibleSummaryContent(aiSummary)) {
+      toast.error('No summary content available to copy');
+      return;
+    }
+    try {
+      const summaryMarkdown = await getSummaryMarkdown();
 
       // If still no summary content, show message
       if (!summaryMarkdown.trim()) {
@@ -192,10 +199,55 @@ export function useCopyOperations({
       console.error('❌ Failed to copy summary:', error);
       toast.error("Failed to copy summary");
     }
-  }, [aiSummary, meetingTitle, meeting, blockNoteSummaryRef]);
+  }, [aiSummary, meetingTitle, meeting, getSummaryMarkdown]);
+
+  const meetingDate = useCallback(
+    () => new Date(meeting.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
+    [meeting],
+  );
+
+  // Save the summary as a PDF where the user chooses
+  const handleExportSummaryPdf = useCallback(async () => {
+    const markdown = await getSummaryMarkdown();
+    if (!markdown.trim()) {
+      toast.error('No summary to export yet', { description: 'Generate a summary first.' });
+      return;
+    }
+    const toastId = toast.loading('Creating PDF…');
+    try {
+      const html = summaryHtmlDocument(meetingTitle, meetingDate(), markdown);
+      const saved = await invokeTauri<string | null>('export_summary_pdf', { html, fileName: meetingTitle });
+      if (saved) toast.success('PDF saved', { id: toastId, description: saved });
+      else toast.dismiss(toastId); // save dialog cancelled
+    } catch (error) {
+      toast.error('Could not create the PDF', { id: toastId, description: String(error) });
+    }
+  }, [getSummaryMarkdown, meetingTitle, meetingDate]);
+
+  // Open the mail app with the follow-up draft (or the summary); the full text goes to the clipboard
+  const handleEmailSummary = useCallback(async () => {
+    const markdown = await getSummaryMarkdown();
+    if (!markdown.trim()) {
+      toast.error('No summary to email yet', { description: 'Generate a summary first.' });
+      return;
+    }
+    const draft = followUpEmailDraft(markdown);
+    const body = markdownToPlainText(draft ?? markdown);
+    try {
+      await navigator.clipboard.writeText(body);
+      await invokeTauri('open_external_url', { url: mailtoUrl(draft ? `Follow-up: ${meetingTitle}` : meetingTitle, body) });
+      toast.success(draft ? 'Follow-up email opened' : 'Summary email opened', {
+        description: 'Add the recipient in your mail app. The text is also on your clipboard.',
+      });
+    } catch (error) {
+      toast.error('Could not open your mail app', { description: String(error) });
+    }
+  }, [getSummaryMarkdown, meetingTitle]);
 
   return {
     handleCopyTranscript,
     handleCopySummary,
+    handleExportSummaryPdf,
+    handleEmailSummary,
   };
 }
