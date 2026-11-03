@@ -13,8 +13,9 @@ export PATH="$HOME/.cargo/bin:/c/Program Files/CMake/bin:$PATH"
 export LIBCLANG_PATH="${LIBCLANG_PATH:-C:/Users/LMAhm/tools/libclang-18/libclang-18.1.1.data/platlib/clang/native}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-C:/cargo-target/meetily}"
 
-# Local LLM sidecar must exist before the app build
-cargo build --release -p llama-helper --manifest-path ../Cargo.toml
+# Local LLM sidecar must exist before the app build. Built with Vulkan so summaries run on the
+# GPU (CPU-only took ~13 min for an 11k-token transcript); needs the Vulkan SDK in C:\VulkanSDK.
+cmd //c "$(cygpath -w "$PWD/build-llama-helper-vulkan.bat")"
 cp "$CARGO_TARGET_DIR/release/llama-helper.exe" src-tauri/binaries/llama-helper-x86_64-pc-windows-msvc.exe
 
 npx -y pnpm@9.15.9 install --frozen-lockfile
