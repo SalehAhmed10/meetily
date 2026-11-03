@@ -73,6 +73,18 @@ impl SummaryProcessesRepository {
         Ok(true)
     }
 
+    /// Average markdown length of completed summaries, used to estimate a new summary's length
+    pub async fn average_completed_markdown_chars(
+        pool: &SqlitePool,
+    ) -> Result<Option<f64>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT AVG(LENGTH(json_extract(result, '$.markdown'))) FROM summary_processes
+             WHERE LOWER(status) = 'completed' AND json_valid(result)",
+        )
+        .fetch_one(pool)
+        .await
+    }
+
     pub async fn get_summary_data_for_meeting(
         pool: &SqlitePool,
         meeting_id: &str,
@@ -361,5 +373,38 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(status, "PENDING");
+    }
+
+    #[tokio::test]
+    async fn average_markdown_chars_uses_only_completed_valid_results() {
+        let pool = test_pool().await;
+        assert_eq!(
+            SummaryProcessesRepository::average_completed_markdown_chars(&pool)
+                .await
+                .unwrap(),
+            None
+        );
+
+        for (id, status, result) in [
+            ("a", "completed", json!({"markdown": "x".repeat(1000)}).to_string()),
+            ("b", "COMPLETED", json!({"markdown": "x".repeat(3000)}).to_string()),
+            ("c", "PENDING", json!({"markdown": "x".repeat(9000)}).to_string()),
+            ("d", "completed", "not json".to_string()),
+        ] {
+            sqlx::query("INSERT INTO summary_processes (meeting_id, status, result) VALUES (?, ?, ?)")
+                .bind(id)
+                .bind(status)
+                .bind(result)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            SummaryProcessesRepository::average_completed_markdown_chars(&pool)
+                .await
+                .unwrap(),
+            Some(2000.0)
+        );
     }
 }

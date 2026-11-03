@@ -242,6 +242,9 @@ export default function PageContent({
               onSummaryChange={meetingData.handleSummaryChange}
               onDirtyChange={meetingData.setIsSummaryDirty}
               summaryError={summaryGeneration.summaryError}
+              summaryProgress={summaryGeneration.summaryProgress}
+              summaryStartedAt={summaryGeneration.summaryStartedAt}
+              summaryDuration={summaryGeneration.summaryDuration}
               onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
               getSummaryStatusMessage={summaryGeneration.getSummaryStatusMessage}
               availableTemplates={templates.availableTemplates}

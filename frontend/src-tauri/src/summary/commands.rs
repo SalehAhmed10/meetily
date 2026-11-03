@@ -45,6 +45,18 @@ pub struct SummaryResponse {
     pub end: Option<String>,
     pub data: Option<serde_json::Value>,
     pub error: Option<String>,
+    /// Live progress while the built-in model is generating; absent otherwise
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<SummaryProgress>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SummaryProgress {
+    pub prompt_tokens: i64,
+    pub generated_tokens: i64,
+    pub generated_chars: u64,
+    /// Typical summary length from completed summaries; None before the first summary
+    pub expected_chars: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -408,7 +420,22 @@ pub async fn api_get_summary<R: Runtime>(
                 }
             };
 
+            let progress = match crate::summary::summary_engine::sidecar::generation_progress() {
+                Some(p) if status == "pending" || status == "processing" => Some(SummaryProgress {
+                    prompt_tokens: p.prompt_tokens,
+                    generated_tokens: p.generated_tokens,
+                    generated_chars: p.generated_chars,
+                    expected_chars: SummaryProcessesRepository::average_completed_markdown_chars(pool)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|chars| chars.round() as u64),
+                }),
+                _ => None,
+            };
+
             let response = SummaryResponse {
+                progress,
                 status: status.clone(),
                 meeting_name,
                 meeting_id: meeting_id.clone(),
@@ -446,6 +473,7 @@ pub async fn api_get_summary<R: Runtime>(
                 end: None,
                 data: None,
                 error: None,
+                progress: None,
             })
         }
         Err(e) => {

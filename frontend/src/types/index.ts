@@ -117,6 +117,16 @@ export interface SummaryProcessResponse {
   end: string | null;
   data: unknown | null;
   error: string | null;
+  /** Live progress while the built-in model generates; absent for other providers */
+  progress?: SummaryProgress;
+}
+
+export interface SummaryProgress {
+  prompt_tokens: number;
+  generated_tokens: number;
+  generated_chars: number;
+  /** Typical summary length from past summaries; null before the first one */
+  expected_chars: number | null;
 }
 
 // Pagination types for optimized transcript loading

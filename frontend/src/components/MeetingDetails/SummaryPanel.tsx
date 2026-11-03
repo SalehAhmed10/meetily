@@ -1,6 +1,7 @@
 "use client";
 
-import { MeetingSummary, Summary, Transcript } from '@/types';
+import { MeetingSummary, Summary, SummaryProgress, Transcript } from '@/types';
+import { SummaryProgressView, formatDuration } from './SummaryProgressView';
 import { BlockNoteSummaryView, BlockNoteSummaryViewRef } from '@/components/AISummary/BlockNoteSummaryView';
 import { EmptyStateSummary } from '@/components/EmptyStateSummary';
 import { ModelConfig } from '@/components/ModelSettingsModal';
@@ -47,6 +48,9 @@ interface SummaryPanelProps {
   onSummaryChange: (summary: Summary) => void;
   onDirtyChange: (isDirty: boolean) => void;
   summaryError: string | null;
+  summaryProgress?: SummaryProgress | null;
+  summaryStartedAt?: string | null;
+  summaryDuration?: number | null;
   onRegenerateSummary: () => Promise<void>;
   getSummaryStatusMessage: (status: 'idle' | 'processing' | 'summarizing' | 'regenerating' | 'completed' | 'error') => string;
   availableTemplates: Array<{ id: string, name: string, description: string }>;
@@ -77,6 +81,9 @@ export function SummaryPanel({
   onSummaryChange,
   onDirtyChange,
   summaryError,
+  summaryProgress = null,
+  summaryStartedAt = null,
+  summaryDuration = null,
   onRegenerateSummary,
   getSummaryStatusMessage,
   availableTemplates,
@@ -281,10 +288,7 @@ export function SummaryPanel({
 
       {isSummaryLoading ? (
         <div className="flex items-center justify-center flex-1">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-            <p className="text-gray-600">Generating AI Summary...</p>
-          </div>
+          <SummaryProgressView progress={summaryProgress} startedAt={summaryStartedAt} />
         </div>
       ) : !hasSummary ? (
         <EmptyStateSummary
@@ -296,6 +300,9 @@ export function SummaryPanel({
       ) : (
         <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
           <div className="p-6 w-full">
+            {summaryDuration !== null && (
+              <p className="mb-2 text-xs text-gray-500">Generated in {formatDuration(summaryDuration)}</p>
+            )}
             <BlockNoteSummaryView
               ref={summaryRef}
               summaryData={aiSummary}

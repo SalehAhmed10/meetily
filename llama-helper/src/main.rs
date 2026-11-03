@@ -45,6 +45,12 @@ enum Request {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
+    /// Sent while a generate request runs, before the final Response, so the app can show progress
+    Progress {
+        prompt_tokens: i32,
+        generated_tokens: i32,
+        generated_chars: usize,
+    },
     Response { text: String, error: Option<String> },
     Pong,
     Goodbye,
@@ -422,6 +428,12 @@ impl ModelState {
                 .context("Failed to add token to batch")?;
         }
 
+        // Reading the transcript (prompt decode) is one call, so report it once up front
+        send_response(&Response::Progress {
+            prompt_tokens: batch.n_tokens(),
+            generated_tokens: 0,
+            generated_chars: 0,
+        })?;
         ctx.decode(&mut batch).context("llama_decode() failed")?;
         let prompt_time = start_time.elapsed();
 
@@ -476,8 +488,17 @@ impl ModelState {
         let mut sampler = pin!(sampler);
 
         loop {
+            let generated = n_cur - n_prompt_tokens;
+            if generated > 0 && generated % 16 == 0 {
+                send_response(&Response::Progress {
+                    prompt_tokens: n_prompt_tokens,
+                    generated_tokens: generated,
+                    generated_chars: output.chars().count(),
+                })?;
+            }
+
             // Check if we've generated enough tokens
-            if (n_cur - n_prompt_tokens) >= max_tokens {
+            if generated >= max_tokens {
                 eprintln!("✓ Reached max_tokens limit");
                 break;
             }
@@ -704,6 +725,20 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_serializes_as_tagged_line() {
+        let json = serde_json::to_string(&Response::Progress {
+            prompt_tokens: 11000,
+            generated_tokens: 32,
+            generated_chars: 120,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"progress","prompt_tokens":11000,"generated_tokens":32,"generated_chars":120}"#
+        );
+    }
 
     #[test]
     fn generate_request_defaults_penalties_when_omitted() {

@@ -18,6 +18,40 @@ use std::os::windows::process::CommandExt;
 use super::models;
 
 // ============================================================================
+// Generation Progress
+// ============================================================================
+
+/// Progress reported by llama-helper while a generate request runs
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GenerationProgress {
+    pub prompt_tokens: i64,
+    pub generated_tokens: i64,
+    pub generated_chars: u64,
+}
+
+/// Latest progress of the in-flight request; None when no request is running
+static GENERATION_PROGRESS: std::sync::Mutex<Option<GenerationProgress>> =
+    std::sync::Mutex::new(None);
+
+fn set_generation_progress(progress: Option<GenerationProgress>) {
+    *GENERATION_PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = progress;
+}
+
+/// Progress of the built-in model's current request, if one is running
+pub fn generation_progress() -> Option<GenerationProgress> {
+    *GENERATION_PROGRESS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Parse a helper `{"type":"progress",...}` line; None for any other message
+fn parse_progress_line(line: &str) -> Option<GenerationProgress> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("type")?.as_str()? != "progress" {
+        return None;
+    }
+    serde_json::from_value(value).ok()
+}
+
+// ============================================================================
 // Sidecar State Management
 // ============================================================================
 
@@ -371,8 +405,11 @@ impl SidecarManager {
             stdin.flush().await.context("Failed to flush stdin")?;
         }
 
-        // Read response from stdout with timeout
-        match tokio::time::timeout(timeout, self.read_response()).await {
+        // Read response from stdout with timeout (progress lines are recorded along the way)
+        set_generation_progress(None);
+        let result = tokio::time::timeout(timeout, self.read_response()).await;
+        set_generation_progress(None);
+        match result {
             Ok(Ok(response)) => {
                 self.update_activity().await;
                 Ok(response)
@@ -389,24 +426,29 @@ impl SidecarManager {
         }
     }
 
-    /// Read a single line response from stdout
+    /// Read the response line from stdout, recording any progress lines sent before it
     async fn read_response(&self) -> Result<String> {
         let mut stdout_lock = self.stdout_reader.lock().await;
         let reader = stdout_lock
             .as_mut()
             .ok_or_else(|| anyhow!("Sidecar not running"))?;
 
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .context("Failed to read response from stdout")?;
+        loop {
+            let mut line = String::new();
+            reader
+                .read_line(&mut line)
+                .await
+                .context("Failed to read response from stdout")?;
 
-        if line.is_empty() {
-            return Err(anyhow!("Sidecar closed stdout (process may have crashed)"));
+            if line.is_empty() {
+                return Err(anyhow!("Sidecar closed stdout (process may have crashed)"));
+            }
+
+            match parse_progress_line(line.trim()) {
+                Some(progress) => set_generation_progress(Some(progress)),
+                None => return Ok(line.trim().to_string()),
+            }
         }
-
-        Ok(line.trim().to_string())
     }
 
     /// Send ping to keep sidecar alive
@@ -666,5 +708,27 @@ impl Drop for SidecarManager {
         // Note: Actual cleanup happens in shutdown() method
         // We can't do async work in Drop, so this is best-effort
         log::debug!("SidecarManager dropped");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_helper_progress_lines_only() {
+        assert_eq!(
+            parse_progress_line(
+                r#"{"type":"progress","prompt_tokens":11000,"generated_tokens":32,"generated_chars":120}"#
+            ),
+            Some(GenerationProgress {
+                prompt_tokens: 11000,
+                generated_tokens: 32,
+                generated_chars: 120
+            })
+        );
+        assert_eq!(parse_progress_line(r#"{"type":"response","text":"progress","error":null}"#), None);
+        assert_eq!(parse_progress_line(r#"{"type":"pong"}"#), None);
+        assert_eq!(parse_progress_line("not json"), None);
     }
 }

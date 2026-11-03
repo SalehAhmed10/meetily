@@ -4,6 +4,7 @@ import {
   MeetingSummary,
   ProcessTranscriptResponse,
   SummaryProcessResponse,
+  SummaryProgress,
   Transcript,
 } from '@/types';
 import { ModelConfig } from '@/components/ModelSettingsModal';
@@ -65,6 +66,13 @@ function restoredSummaryStatus(response?: SummaryProcessResponse | null): Summar
   return 'idle';
 }
 
+/** How long a finished summary took, from the process start/end timestamps */
+function summaryDurationMs(response?: SummaryProcessResponse | null): number | null {
+  if (!response?.start || !response.end) return null;
+  const ms = Date.parse(response.end) - Date.parse(response.start);
+  return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+
 interface UseSummaryGenerationProps {
   initialSummary?: SummaryProcessResponse | null;
   meeting: {
@@ -99,6 +107,11 @@ export function useSummaryGeneration({
     restoredSummaryStatus(restored) === 'error'
       ? restored?.error || 'Summary generation failed. Please retry.'
       : null,
+  );
+  const [summaryProgress, setSummaryProgress] = useState<SummaryProgress | null>(null);
+  const [summaryStartedAt, setSummaryStartedAt] = useState<string | null>(() => restored?.start ?? null);
+  const [summaryDuration, setSummaryDuration] = useState<number | null>(() =>
+    restoredSummaryStatus(restored) === 'completed' ? summaryDurationMs(restored) : null,
   );
   const mountedRef = useRef(true);
   const visibleMeetingIdRef = useRef(meeting.id);
@@ -175,6 +188,9 @@ export function useSummaryGeneration({
     if (!mountedRef.current || visibleMeetingIdRef.current !== meeting.id || generationId !== generationIdRef.current) {
       return;
     }
+    const inProgress = pollingResult.status === 'pending' || pollingResult.status === 'processing';
+    setSummaryProgress(inProgress ? pollingResult.progress ?? null : null);
+    if (inProgress) return;
     if (pollingResult.status === 'cancelled') {
       let existing: SummaryProcessResponse;
       try {
@@ -249,6 +265,7 @@ export function useSummaryGeneration({
         updateMeetingTitle(meetingName);
       }
       setAiSummary(summary);
+      setSummaryDuration(summaryDurationMs(pollingResult));
       setSummaryStatus('completed');
       activeProcessIdRef.current = null;
       setSummaryError(null);
@@ -295,6 +312,8 @@ export function useSummaryGeneration({
     setSummaryError(status === 'error'
       ? initialSummary.error || 'Summary generation failed. Please retry.'
       : null);
+    setSummaryDuration(status === 'completed' ? summaryDurationMs(initialSummary) : null);
+    setSummaryStartedAt(initialSummary.start);
     if (status !== 'processing' || !initialSummary.start) return;
 
     const generationId = ++generationIdRef.current;
@@ -324,6 +343,8 @@ export function useSummaryGeneration({
     activeProcessIdRef.current = null;
     setSummaryStatus(isRegeneration ? 'regenerating' : 'processing');
     setSummaryError(null);
+    setSummaryProgress(null);
+    setSummaryStartedAt(new Date().toISOString());
 
     try {
       if (!transcriptText.trim()) {
@@ -587,6 +608,9 @@ export function useSummaryGeneration({
   return {
     summaryStatus,
     summaryError,
+    summaryProgress,
+    summaryStartedAt,
+    summaryDuration,
     handleGenerateSummary,
     handleRegenerateSummary,
     handleStopGeneration,
