@@ -22,12 +22,7 @@ const TRANSCRIPT_EXTENSIONS: &[&str] = &["txt", "md", "srt", "vtt"];
 fn parse_transcript(content: &str, extension: &str) -> Vec<(String, Option<f64>, Option<f64>)> {
     let content = content.trim_start_matches('\u{feff}');
     if !matches!(extension, "srt" | "vtt") {
-        return content
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .map(|l| (l.to_string(), None, None))
-            .collect();
+        return parse_plain_text(content);
     }
 
     // Cues are separated by blank lines; some exporters write whitespace on those lines
@@ -55,6 +50,65 @@ fn parse_transcript(content: &str, extension: &str) -> Vec<(String, Option<f64>,
             (!text.is_empty()).then_some((text, start, end))
         })
         .collect()
+}
+
+/// One entry per non-empty line. When most lines start with a timestamp ("00:05 Alex: hi",
+/// "[1:02:03] ...", as in Google Meet exports), it becomes the line's start time and each line
+/// ends where the next timestamped line starts. "Most" is counted from the first timestamped
+/// line, since exports put a header before it, and needs at least two such lines, so ordinary
+/// notes that happen to begin with a time ("10:30 call moved") stay plain text.
+fn parse_plain_text(content: &str) -> Vec<(String, Option<f64>, Option<f64>)> {
+    let lines: Vec<&str> = content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let stamped: Vec<Option<(f64, &str)>> =
+        lines.iter().map(|l| split_leading_timestamp(l)).collect();
+    let first_stamped = stamped
+        .iter()
+        .position(Option::is_some)
+        .unwrap_or(lines.len());
+    let stamped_count = stamped.iter().filter(|s| s.is_some()).count();
+    if stamped_count < 2 || stamped_count * 2 <= lines.len() - first_stamped {
+        return lines
+            .into_iter()
+            .map(|l| (l.to_string(), None, None))
+            .collect();
+    }
+
+    let mut entries: Vec<(String, Option<f64>, Option<f64>)> = lines
+        .iter()
+        .zip(&stamped)
+        .map(|(line, stamp)| match stamp {
+            Some((start, rest)) => (rest.to_string(), Some(*start), None),
+            None => (line.to_string(), None, None),
+        })
+        .collect();
+    let mut next_start: Option<f64> = None;
+    for entry in entries.iter_mut().rev() {
+        if let Some(start) = entry.1 {
+            entry.2 = Some(next_start.unwrap_or(start).max(start));
+            next_start = Some(start);
+        }
+    }
+    entries
+}
+
+/// "00:05 Alex: hi" / "[00:05] Alex: hi" -> (5.0, "Alex: hi"); None if the line has no leading time
+fn split_leading_timestamp(line: &str) -> Option<(f64, &str)> {
+    let (token, rest) = line.split_once(char::is_whitespace)?;
+    let token = token
+        .trim_start_matches(['[', '('])
+        .trim_end_matches([']', ')']);
+    if !token.contains(':') {
+        return None;
+    }
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    Some((parse_timestamp(token)?, rest))
 }
 
 /// "HH:MM:SS,mmm", "HH:MM:SS.mmm" or "MM:SS.mmm" -> seconds
@@ -240,6 +294,43 @@ mod tests {
                 ("Alice: hi".to_string(), None, None),
                 ("Bob: hello".to_string(), None, None)
             ]
+        );
+    }
+
+    #[test]
+    fn parses_leading_timestamps_in_meet_style_text() {
+        let txt = "# Meeting Transcription\nDuration: 56 minutes\n## Transcript\n00:00 Alex Doe: Hello!\n00:05 Priya Rao: Hi, thanks.\n[1:02:03] Alex Doe: Wrapping up.\n";
+        assert_eq!(
+            parse_transcript(txt, "txt"),
+            vec![
+                ("# Meeting Transcription".to_string(), None, None),
+                ("Duration: 56 minutes".to_string(), None, None),
+                ("## Transcript".to_string(), None, None),
+                ("Alex Doe: Hello!".to_string(), Some(0.0), Some(5.0)),
+                (
+                    "Priya Rao: Hi, thanks.".to_string(),
+                    Some(5.0),
+                    Some(3723.0)
+                ),
+                (
+                    "Alex Doe: Wrapping up.".to_string(),
+                    Some(3723.0),
+                    Some(3723.0)
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_notes_as_plain_text_when_few_lines_start_with_a_time() {
+        let txt =
+            "Client call notes\n10:30 call moved to Friday\nNeed CSV export\nFix slow login\n";
+        assert!(parse_transcript(txt, "txt")
+            .iter()
+            .all(|(_, start, end)| start.is_none() && end.is_none()));
+        assert_eq!(
+            parse_transcript(txt, "txt")[1].0,
+            "10:30 call moved to Friday"
         );
     }
 
