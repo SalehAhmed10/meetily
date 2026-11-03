@@ -641,7 +641,7 @@ const Sidebar: React.FC = () => {
               {item.id.startsWith('project:') && (
                 <button
                   type="button"
-                  className="ml-auto flex size-7 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-blue-600"
+                  className="ml-auto flex size-7 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                   aria-label={`Action items for ${item.title}`}
                   title="Action items"
                   onClick={(e) => {
@@ -664,26 +664,24 @@ const Sidebar: React.FC = () => {
               )}
             </>
           ) : (
-            <div className="flex flex-col w-full">
-              <div className="flex items-center w-full">
+            <div className="flex flex-col w-full min-w-0">
+              <div className="relative flex items-center w-full min-w-0">
                 {isMeetingItem ? (
-                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-gray-100">
-                    <File className="w-3.5 h-3.5 text-gray-600" />
-                  </div>
+                  <File className={`w-4 h-4 mr-2 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400'}`} aria-hidden />
                 ) : (
-                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-blue-100">
-                    <Plus className="w-3.5 h-3.5 text-blue-600" />
-                  </div>
+                  <Plus className="w-4 h-4 mr-2 flex-shrink-0 text-blue-600" aria-hidden />
                 )}
-                <span className="flex-1 break-words">{item.title}</span>
+                {/* One line per meeting so the list scans; the full title shows on hover */}
+                <span className="flex-1 min-w-0 truncate" title={item.title}>{item.title}</span>
                 {isMeetingItem && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  // Floats over the end of the title instead of reserving its width
+                  <div className={`absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pl-2 rounded-md opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 ${isActive ? 'bg-blue-100' : hasTranscriptMatch ? 'bg-yellow-50' : 'bg-gray-50'}`}>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEditStart(item.id, item.title);
                       }}
-                      className="hover:text-blue-600 p-1 rounded-md hover:bg-blue-50 flex-shrink-0"
+                      className="text-gray-500 hover:text-blue-600 p-1 rounded-md hover:bg-white flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                       aria-label="Edit meeting title"
                     >
                       <Pencil className="w-4 h-4" />
@@ -693,7 +691,7 @@ const Sidebar: React.FC = () => {
                         e.stopPropagation();
                         setDeleteModalState({ isOpen: true, itemId: item.id });
                       }}
-                      className="hover:text-red-600 p-1 rounded-md hover:bg-red-50 flex-shrink-0"
+                      className="text-gray-500 hover:text-red-600 p-1 rounded-md hover:bg-white flex-shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                       aria-label="Delete meeting"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -704,8 +702,8 @@ const Sidebar: React.FC = () => {
 
               {/* Show transcript match snippet if available */}
               {hasTranscriptMatch && (
-                <div className="mt-1 ml-8 text-xs text-gray-500 bg-yellow-50 p-1.5 rounded border border-yellow-100 line-clamp-2">
-                  <span className="font-medium text-yellow-600">Match:</span> {matchingResult.matchContext}
+                <div className="mt-1 ml-6 text-xs text-yellow-900 bg-yellow-50 p-1.5 rounded border border-yellow-100 line-clamp-2">
+                  <span className="font-medium text-yellow-700">Match:</span> {matchingResult.matchContext}
                 </div>
               )}
             </div>

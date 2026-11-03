@@ -100,16 +100,16 @@ function ProjectActionsContent() {
       <div className="mx-auto max-w-3xl px-6 py-8">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-sm text-gray-500">
-              <Folder className="size-4 text-blue-600" aria-hidden />
+            <h1 className="text-2xl font-semibold text-gray-900">Action items</h1>
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-gray-500">
+              <Folder className="size-4 shrink-0 text-blue-600" aria-hidden />
               <span className="truncate">{project?.name ?? "Project"}</span>
+              {load.state === "ready" && items.length > 0 && (
+                <span className="shrink-0 tabular-nums">
+                  · {openCount} open · {doneCount} done
+                </span>
+              )}
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-gray-900">Action items</h1>
-            {load.state === "ready" && items.length > 0 && (
-              <p className="mt-1 text-sm text-gray-500 tabular-nums">
-                {openCount} open · {doneCount} done
-              </p>
-            )}
           </div>
           {load.state === "ready" && doneCount > 0 && (
             <Button variant="outline" size="sm" onClick={() => setShowDone(v => !v)}>
@@ -166,10 +166,12 @@ function ProjectActionsContent() {
               <button
                 type="button"
                 onClick={() => openMeeting(group.meetingId, group.title)}
-                className="mb-2 flex w-full items-baseline justify-between gap-3 text-left hover:underline"
+                className="group mb-2 flex w-full items-baseline justify-between gap-3 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               >
-                <span className="truncate text-sm font-medium text-gray-900">{group.title}</span>
-                <span className="shrink-0 text-xs text-gray-500">{formatMeetingDate(group.date)}</span>
+                <span className="truncate text-sm font-medium text-gray-900 underline-offset-4 group-hover:underline" title={group.title}>
+                  {group.title}
+                </span>
+                <span className="shrink-0 text-xs text-gray-500 tabular-nums">{formatMeetingDate(group.date)}</span>
               </button>
               <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
                 {group.items.map(item => (
@@ -180,7 +182,7 @@ function ProjectActionsContent() {
                         checked={item.done}
                         disabled={saving.has(savingId(item))}
                         onChange={() => void toggle(item)}
-                        className="mt-0.5 size-4 shrink-0 accent-blue-600"
+                        className="mt-0.5 size-4 shrink-0 cursor-pointer accent-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait"
                       />
                       <span className="min-w-0 flex-1">
                         <span className={`block text-sm ${item.done ? "text-gray-400 line-through" : "text-gray-900"}`}>
