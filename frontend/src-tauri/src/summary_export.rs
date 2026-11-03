@@ -34,15 +34,29 @@ fn safe_file_name(name: &str) -> String {
     }
 }
 
+/// The summary is model output from transcripts the user may have imported, so the page may
+/// load nothing: no scripts, no remote or local files, only its inline styles and data: images.
+const CSP: &str = r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">"#;
+
+fn with_csp(html: &str) -> String {
+    match html.find("<head>") {
+        Some(at) => format!("{}{CSP}{}", &html[..at + 6], &html[at + 6..]),
+        None => format!("<!doctype html><head>{CSP}</head>{html}"),
+    }
+}
+
 fn print_to_pdf(browser: &Path, html: &str, target: &Path) -> Result<(), String> {
     let work = tempfile::tempdir().map_err(|e| format!("Could not create a temp folder: {e}"))?;
     let page = work.path().join("summary.html");
-    std::fs::write(&page, html).map_err(|e| format!("Could not write the page: {e}"))?;
+    std::fs::write(&page, with_csp(html)).map_err(|e| format!("Could not write the page: {e}"))?;
     let url = url::Url::from_file_path(&page).map_err(|_| "Bad temp path".to_string())?;
     let output = std::process::Command::new(browser)
         .arg("--headless=new")
         .arg("--disable-gpu")
         .arg("--no-pdf-header-footer")
+        // No network at all: every host name fails to resolve
+        .arg("--host-resolver-rules=MAP * ~NOTFOUND")
+        .arg("--disable-extensions")
         .arg(format!(
             "--user-data-dir={}",
             work.path().join("profile").display()
@@ -109,6 +123,14 @@ mod tests {
             "Acme scope phase 1"
         );
         assert_eq!(safe_file_name("  "), "Meeting summary");
+    }
+
+    #[test]
+    fn every_page_gets_the_content_security_policy() {
+        let page =
+            with_csp("<!doctype html><html><head><title>t</title></head><body></body></html>");
+        assert!(page.contains("<head><meta http-equiv=\"Content-Security-Policy\""));
+        assert!(with_csp("<p>no head</p>").starts_with("<!doctype html><head><meta"));
     }
 
     /// Renders a real PDF when Edge or Chrome is installed (skipped otherwise)

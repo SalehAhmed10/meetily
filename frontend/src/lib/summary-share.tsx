@@ -24,7 +24,10 @@ a { color: #1d4ed8; }
 
 /** The summary as a standalone, print-ready HTML page (title, date, then the summary) */
 export function summaryHtmlDocument(title: string, date: string, markdown: string): string {
-  const body = renderToStaticMarkup(<ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>);
+  // No images: the summary is model output, and an image URL in it would be fetched
+  const body = renderToStaticMarkup(
+    <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['img']}>{markdown}</ReactMarkdown>,
+  );
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
 <style>${PRINT_CSS}</style></head><body>
 <header><h1>${escapeHtml(title)}</h1><p>${escapeHtml(date)}</p></header>
