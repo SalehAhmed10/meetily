@@ -41,7 +41,8 @@ const VIRTUALIZATION_THRESHOLD = 10;
 
 // Helper function to format seconds as recording-relative time [MM:SS]
 function formatRecordingTime(seconds: number | undefined): string {
-    if (seconds === undefined) return '[--:--]';
+    // Imported lines without a time (e.g. a notes header) get no label rather than [00:00]
+    if (seconds === undefined) return '';
 
     const totalSeconds = Math.floor(seconds);
     const minutes = Math.floor(totalSeconds / 60);
@@ -73,7 +74,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     showConfidence,
 }: {
     id: string;
-    timestamp: number;
+    timestamp?: number;
     text: string;
     confidence?: number;
     isStreaming: boolean;

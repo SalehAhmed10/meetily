@@ -33,7 +33,7 @@ interface UsePaginatedTranscriptsReturn {
 function convertTranscriptsToSegments(transcripts: Transcript[]): TranscriptSegmentData[] {
     return transcripts.map(t => ({
         id: t.id,
-        timestamp: t.audio_start_time ?? 0,
+        timestamp: t.audio_start_time ?? undefined,
         endTime: t.audio_end_time,
         text: t.text,
         confidence: t.confidence,

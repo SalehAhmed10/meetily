@@ -77,14 +77,19 @@ fn parse_plain_text(content: &str) -> Vec<(String, Option<f64>, Option<f64>)> {
             .collect();
     }
 
-    let mut entries: Vec<(String, Option<f64>, Option<f64>)> = lines
-        .iter()
-        .zip(&stamped)
-        .map(|(line, stamp)| match stamp {
-            Some((start, rest)) => (rest.to_string(), Some(*start), None),
-            None => (line.to_string(), None, None),
-        })
-        .collect();
+    let mut entries: Vec<(String, Option<f64>, Option<f64>)> = Vec::new();
+    for (line, stamp) in lines.iter().zip(&stamped) {
+        match (stamp, entries.last_mut()) {
+            (Some((start, rest)), _) => entries.push((rest.to_string(), Some(*start), None)),
+            // An untimed line inside the transcript (e.g. a list under a speaker's turn)
+            // continues the previous line; kept separate it would sort to the top (no time)
+            (None, Some(previous)) if previous.1.is_some() => {
+                previous.0.push(' ');
+                previous.0.push_str(line);
+            }
+            (None, _) => entries.push((line.to_string(), None, None)),
+        }
+    }
     let mut next_start: Option<f64> = None;
     for entry in entries.iter_mut().rev() {
         if let Some(start) = entry.1 {
@@ -155,7 +160,13 @@ fn to_segments(entries: Vec<(String, Option<f64>, Option<f64>)>) -> Vec<Transcri
         .map(|(text, start, end)| TranscriptSegment {
             id: format!("transcript-{}", Uuid::new_v4()),
             text,
-            timestamp: now.clone(),
+            // Copy and the summary prompt fall back to this when there is no audio time, so a
+            // line without a time gets no wall-clock text either
+            timestamp: if start.is_some() {
+                now.clone()
+            } else {
+                String::new()
+            },
             audio_start_time: start,
             audio_end_time: end,
             duration: start.zip(end).map(|(s, e)| e - s),
@@ -299,7 +310,8 @@ mod tests {
 
     #[test]
     fn parses_leading_timestamps_in_meet_style_text() {
-        let txt = "# Meeting Transcription\nDuration: 56 minutes\n## Transcript\n00:00 Alex Doe: Hello!\n00:05 Priya Rao: Hi, thanks.\n[1:02:03] Alex Doe: Wrapping up.\n";
+        // "- First point" is an untimed list line inside Priya's turn: it joins that line
+        let txt = "# Meeting Transcription\nDuration: 56 minutes\n## Transcript\n00:00 Alex Doe: Hello!\n00:05 Priya Rao: Hi, thanks.\n- First point\n[1:02:03] Alex Doe: Wrapping up.\n";
         assert_eq!(
             parse_transcript(txt, "txt"),
             vec![
@@ -308,7 +320,7 @@ mod tests {
                 ("## Transcript".to_string(), None, None),
                 ("Alex Doe: Hello!".to_string(), Some(0.0), Some(5.0)),
                 (
-                    "Priya Rao: Hi, thanks.".to_string(),
+                    "Priya Rao: Hi, thanks. - First point".to_string(),
                     Some(5.0),
                     Some(3723.0)
                 ),
@@ -342,6 +354,8 @@ mod tests {
         ]);
         assert_eq!(segs[0].duration, Some(2.5));
         assert_eq!(segs[1].duration, None);
+        assert!(!segs[0].timestamp.is_empty());
+        assert_eq!(segs[1].timestamp, "");
     }
 
     #[tokio::test]
