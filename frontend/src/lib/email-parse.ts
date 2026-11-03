@@ -26,8 +26,10 @@ function splitHeaders(text: string): { headers: Headers; rest: string } {
     last = match[1].toLowerCase();
     headers.set(last, match[2]);
   }
-  // Not a header block (an ordinary pasted email starts with text): keep everything as body
-  if (headers.size === 0 || (i < lines.length && lines[i].trim() !== '')) {
+  // Not a header block: an ordinary pasted email starts with text, and a first line like
+  // "Update: call moved" is not a header unless it names a mail field
+  const mailField = ['from', 'subject', 'date', 'sent', 'content-type'].some(name => headers.has(name));
+  if (!mailField || (i < lines.length && lines[i].trim() !== '')) {
     return { headers: new Map(), rest: text.replace(/\r\n/g, '\n') };
   }
   return { headers, rest: lines.slice(i + 1).join('\n') };
@@ -85,13 +87,15 @@ function htmlToText(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n\n')
     .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (entity, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? entity);
 }
+
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', mdash: '—', ndash: '–', hellip: '…', bull: '•',
+};
 
 /** The readable text of a MIME entity: text/plain preferred, HTML as a fallback */
 function entityText(headers: Headers, body: string): { text: string; html: boolean } | null {
@@ -108,7 +112,9 @@ function entityText(headers: Headers, body: string): { text: string; html: boole
       .filter((t): t is { text: string; html: boolean } => t !== null);
     return found.find(t => !t.html) ?? found[0] ?? null;
   }
-  if (!type.startsWith('text/')) return null; // attachments
+  // Attachments (a .ics invite, a .csv) are not the message
+  if (/^\s*attachment/i.test(headers.get('content-disposition') ?? '')) return null;
+  if (!type.startsWith('text/plain') && !type.startsWith('text/html')) return null;
   const charset = param(headers.get('content-type') ?? '', 'charset');
   const encoding = (headers.get('content-transfer-encoding') ?? '').toLowerCase();
   const decoded =

@@ -57,5 +57,25 @@ describe('parseEmail', () => {
 
   test('a first line that only looks like a header is still body', () => {
     expect(parseEmail('Note: call me\nabout the contract').body).toBe('Note: call me\nabout the contract');
+    expect(parseEmail('Update: call moved to 3pm\n\nHi all,').body).toBe('Update: call moved to 3pm\n\nHi all,');
+  });
+
+  test('skips attachments and decodes HTML entities', () => {
+    const eml = [
+      'Subject: Interview',
+      'Content-Type: multipart/mixed; boundary="m"',
+      '',
+      '--m',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      '<p>Don&#8217;t forget &mdash; round&nbsp;2</p>',
+      '--m',
+      'Content-Type: text/calendar; charset=utf-8',
+      'Content-Disposition: attachment; filename="invite.ics"',
+      '',
+      'BEGIN:VCALENDAR',
+      '--m--',
+    ].join('\r\n');
+    expect(parseEmail(eml).body).toBe('Don’t forget — round 2');
   });
 });

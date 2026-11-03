@@ -89,7 +89,7 @@ export function ProjectTimeline({ load, onRetry, onStageChanged, onAddEmail }: P
         </p>
       )}
       {groups.map(group => (
-        <section key={group.stage ?? '(none)'} aria-label={group.stage ?? 'No stage'}>
+        <section key={group.stage === null ? 'none' : `stage:${group.stage}`} aria-label={group.stage ?? 'No stage'}>
           {showHeadings && (
             <h2 className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-gray-900">
               {group.stage ?? <span className="font-medium text-gray-500">No stage</span>}

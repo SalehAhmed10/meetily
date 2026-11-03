@@ -132,8 +132,16 @@ impl TranscriptsRepository {
 
         match transcript_lower.find(&query_lower) {
             Some(match_index) => {
-                let start_index = match_index.saturating_sub(100);
-                let end_index = (match_index + query.len() + 100).min(transcript.len());
+                // Byte offsets from the lowercased copy, moved onto character boundaries of the
+                // original: slicing mid-character ("’", "—") panics
+                let mut start_index = match_index.saturating_sub(100).min(transcript.len());
+                while !transcript.is_char_boundary(start_index) {
+                    start_index -= 1;
+                }
+                let mut end_index = (match_index + query.len() + 100).min(transcript.len());
+                while !transcript.is_char_boundary(end_index) {
+                    end_index += 1;
+                }
 
                 let mut context = String::new();
                 if start_index > 0 {
@@ -147,5 +155,18 @@ impl TranscriptsRepository {
             }
             None => transcript.chars().take(200).collect(), // Fallback to the start of the transcript
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn match_context_never_cuts_a_character_in_half() {
+        // The window start lands one byte into "’" (3 bytes); slicing there used to panic
+        let text = format!("’{} query{}—", "a".repeat(97), "b".repeat(96));
+        let context = TranscriptsRepository::get_match_context(&text, "QUERY");
+        assert!(context.contains("query"));
     }
 }

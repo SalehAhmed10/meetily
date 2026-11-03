@@ -54,7 +54,8 @@ export function AddEmailDialog({ projectId, projectName, knownStages, open, onOp
     const email = parseEmail(text);
     setParsed(email);
     if (email.subject && (!subject || subject === parsed.subject)) setSubject(email.subject);
-    if (email.date) setDate(dateInputValue(email.date));
+    // Only when the email's date itself changed, so editing the text keeps a date the user picked
+    if (email.date && email.date.getTime() !== parsed.date?.getTime()) setDate(dateInputValue(email.date));
   };
 
   const loadFile = async (file: File | undefined) => {
