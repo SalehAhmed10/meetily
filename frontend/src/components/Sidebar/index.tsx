@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, FileText } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, FileText, Folder } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -38,6 +38,7 @@ interface SidebarItem {
   title: string;
   type: 'folder' | 'file';
   children?: SidebarItem[];
+  count?: number;
 }
 
 /** Keep matching meetings; keep a project folder whole if its name matches, else with its matching meetings */
@@ -628,8 +629,13 @@ const Sidebar: React.FC = () => {
                 <Calendar className="w-4 h-4 mr-2" />
               ) : item.id === 'notes' ? (
                 <Calendar className="w-4 h-4 mr-2" />
+              ) : item.id.startsWith('project:') ? (
+                <Folder className="w-4 h-4 mr-2 flex-shrink-0 text-blue-600" />
               ) : null}
-              <span className={depth === 0 ? "" : "font-medium"}>{item.title}</span>
+              <span className={depth === 0 ? "" : "font-medium truncate"}>{item.title}</span>
+              {item.count !== undefined && (
+                <span className="ml-2 rounded-full bg-gray-100 px-1.5 text-xs text-gray-500 tabular-nums">{item.count}</span>
+              )}
               <div className="ml-auto">
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4 text-gray-500" />

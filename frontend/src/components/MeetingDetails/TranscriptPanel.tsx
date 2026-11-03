@@ -71,8 +71,8 @@ export function TranscriptPanel({
     <div className="flex h-full min-w-0 w-full bg-white flex-col relative @container">
       {/* Title area */}
       <div className="p-4 border-b border-gray-200">
-        {headerSlot && <div className="mb-2 flex justify-center">{headerSlot}</div>}
         <TranscriptButtonGroup
+          leading={headerSlot}
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}
           onOpenMeetingFolder={onOpenMeetingFolder}

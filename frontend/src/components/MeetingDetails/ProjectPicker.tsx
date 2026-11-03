@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import { Check, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -76,8 +76,11 @@ export function ProjectPicker({ meetingId }: { meetingId: string }) {
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" title="Project for this meeting" aria-label="Set project">
-          <Folder size={16} />
-          <span className="max-w-[12rem] truncate">{current?.name ?? 'No project'}</span>
+          <Folder size={16} className={current ? 'text-blue-600' : 'text-gray-400'} />
+          <span className={`max-w-[10rem] truncate ${current ? '' : 'text-gray-500'}`}>
+            {current?.name ?? 'Add to project'}
+          </span>
+          <ChevronDown size={14} className="text-gray-400" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">

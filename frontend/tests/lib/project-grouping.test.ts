@@ -27,11 +27,11 @@ describe('sidebar project grouping', () => {
       ],
       projects,
     );
-    expect(items.map(i => [i.id, i.title])).toEqual([
-      [projectFolderId('p-acme'), 'Acme (1)'],
-      [projectFolderId('p-zaroba'), 'Zaroba (2)'],
-      ['m2', 'Notes'],
-      ['m5', 'Orphan'],
+    expect(items.map(i => [i.id, i.title, i.count])).toEqual([
+      [projectFolderId('p-acme'), 'Acme', 1],
+      [projectFolderId('p-zaroba'), 'Zaroba', 2],
+      ['m2', 'Notes', undefined],
+      ['m5', 'Orphan', undefined],
     ]);
     expect(items[1].children?.map(c => c.id)).toEqual(['m1', 'm4']);
   });

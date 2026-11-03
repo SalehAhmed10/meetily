@@ -14,6 +14,8 @@ interface SidebarItem {
   title: string;
   type: 'folder' | 'file';
   children?: SidebarItem[];
+  /** Meetings in a project folder, shown as a badge */
+  count?: number;
 }
 
 export interface CurrentMeeting {
@@ -43,7 +45,8 @@ export function groupMeetingsByProject(meetings: CurrentMeeting[], projects: Pro
     .filter(({ files }) => files.length > 0)
     .map(({ project, files }): SidebarItem => ({
       id: projectFolderId(project.id),
-      title: `${project.name} (${files.length})`,
+      title: project.name,
+      count: files.length,
       type: 'folder',
       children: files,
     }));
