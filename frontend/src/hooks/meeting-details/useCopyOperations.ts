@@ -217,8 +217,24 @@ export function useCopyOperations({
     const html = summaryHtmlDocument(meetingTitle, meetingDate(), markdown);
     try {
       const saved = await invokeTauri<string | null>('export_summary_pdf', { html, fileName: meetingTitle });
-      if (saved) toast.success('PDF saved', { id: toastId, description: saved });
-      else toast.dismiss(toastId); // save dialog cancelled
+      if (saved) {
+        toast.success('PDF saved', {
+          id: toastId,
+          description: saved,
+          duration: 10_000,
+          action: {
+            label: 'Open',
+            onClick: () => {
+              invokeTauri('open_external_url', { url: saved }).catch(error =>
+                toast.error('Could not open the PDF', { description: String(error) }),
+              );
+            },
+          },
+        });
+      }
+      else {
+        toast.dismiss(toastId); // save dialog cancelled
+      }
     } catch (error) {
       // The direct save runs Edge/Chrome in the background; when that fails, print in-app instead
       console.warn('Direct PDF save failed, opening the print window:', error);
