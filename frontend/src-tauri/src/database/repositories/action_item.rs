@@ -1,7 +1,8 @@
 use sqlx::SqlitePool;
 
-/// A completed summary of a meeting in a project: (meeting id, title, created at, markdown)
-pub type ProjectSummary = (String, String, String, String);
+/// A completed summary of a meeting in a project: (meeting id, title, created at, markdown,
+/// English markdown when the summary was translated)
+pub type ProjectSummary = (String, String, String, String, Option<String>);
 
 pub struct ActionItemsRepository;
 
@@ -12,7 +13,8 @@ impl ActionItemsRepository {
         project_id: &str,
     ) -> Result<Vec<ProjectSummary>, sqlx::Error> {
         sqlx::query_as(
-            "SELECT m.id, m.title, CAST(m.created_at AS TEXT), json_extract(s.result, '$.markdown')
+            "SELECT m.id, m.title, CAST(m.created_at AS TEXT), json_extract(s.result, '$.markdown'),
+                    json_extract(s.result, '$.english_cache.markdown')
              FROM meetings m JOIN summary_processes s ON s.meeting_id = m.id
              WHERE m.project_id = ? AND LOWER(s.status) = 'completed' AND json_valid(s.result)
                AND json_extract(s.result, '$.markdown') IS NOT NULL

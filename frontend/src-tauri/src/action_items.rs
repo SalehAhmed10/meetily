@@ -1,6 +1,6 @@
 // Open action items per project: read from each meeting's summary, ticked off in the app.
 
-use crate::database::repositories::action_item::ActionItemsRepository;
+use crate::database::repositories::action_item::{ActionItemsRepository, ProjectSummary};
 use crate::state::AppState;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -25,22 +25,41 @@ pub struct ProjectActionItem {
     pub item: ActionItem,
 }
 
-/// What a ticked-off item is remembered by: its task, lowercased, spaces collapsed
-fn item_key(task: &str) -> String {
-    task.split_whitespace()
+/// What a ticked-off item is remembered by: owner and task, lowercased, spaces collapsed
+fn item_key(item: &ActionItem) -> String {
+    format!("{} {}", item.owner.as_deref().unwrap_or(""), item.task)
+        .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
 }
 
-/// The text of a heading line ("## Action Items", "**Client Action Items**"), or None
-fn heading(line: &str) -> Option<&str> {
+/// Bold lines rank below every `#` level, so "**Saleh**" inside "## Action Items" is a subheading
+const BOLD_LEVEL: usize = 7;
+
+/// (level, text) of a heading line ("## Action Items", "**Client Action Items**:"), or None
+fn heading(line: &str) -> Option<(usize, &str)> {
     let line = line.trim();
-    if let Some(text) = line.strip_prefix('#') {
-        return Some(text.trim_start_matches('#').trim());
+    if line.starts_with('#') {
+        let level = line.chars().take_while(|&c| c == '#').count();
+        return Some((level, line[level..].trim()));
     }
-    let inner = line.strip_prefix("**")?.strip_suffix("**")?;
-    (!inner.is_empty() && !inner.contains("**")).then(|| inner.trim().trim_end_matches(':'))
+    let inner = line
+        .trim_end_matches(':')
+        .strip_prefix("**")?
+        .strip_suffix("**")?;
+    (!inner.is_empty() && !inner.contains("**"))
+        .then(|| (BOLD_LEVEL, inner.trim().trim_end_matches(':')))
+}
+
+/// "**Saleh:** Send scope" -> (Saleh, Send scope); a short bold label before the words
+fn owner_prefix(text: &str) -> Option<(String, &str)> {
+    let rest = text.strip_prefix("**")?;
+    let end = rest.find("**")?;
+    let label = rest[..end].trim().trim_end_matches(':').trim();
+    let words = rest[end + 2..].trim_start().trim_start_matches(':').trim();
+    (!label.is_empty() && !words.is_empty() && label.split_whitespace().count() <= 4)
+        .then(|| (label.to_string(), words))
 }
 
 fn clean(cell: &str) -> Option<String> {
@@ -52,37 +71,54 @@ fn clean(cell: &str) -> Option<String> {
     (!empty).then_some(text)
 }
 
-fn cells(row: &str) -> Vec<&str> {
+/// Table cells; `\|` stays inside its cell
+fn cells(row: &str) -> Vec<String> {
     let row = row.trim();
     let row = row.strip_prefix('|').unwrap_or(row);
     let row = row.strip_suffix('|').unwrap_or(row);
-    row.split('|').map(str::trim).collect()
+    row.replace("\\|", "\u{1}")
+        .split('|')
+        .map(|c| c.trim().replace('\u{1}', "|"))
+        .collect()
+}
+
+struct Section {
+    level: usize,
+    owner: Option<String>,
 }
 
 /// Action items from a summary: every section whose heading says "action item", written
 /// either as a table (Owner | Task | Due | ... | time) or as a list. A heading like
-/// "Client Action Items" makes "Client" the owner of its list items.
+/// "Client Action Items", a deeper subheading inside the section, or a bold "**Saleh:**"
+/// before an item sets the owner. The section ends at the next heading of its level or above.
 pub fn parse_action_items(markdown: &str) -> Vec<ActionItem> {
-    let mut items = Vec::new();
-    let mut section_owner: Option<Option<String>> = None; // Some(..) while inside a section
+    let mut items: Vec<ActionItem> = Vec::new();
+    let mut section: Option<Section> = None;
     let mut columns: Option<Vec<String>> = None; // table header of the current section
+    let mut last_bullet: Option<usize> = None; // index in items, for nested bullets
 
     for line in markdown.lines() {
         let trimmed = line.trim();
-        if let Some(title) = heading(trimmed) {
+        if let Some((level, title)) = heading(trimmed) {
             let lower = title.to_lowercase();
-            section_owner = lower.contains("action item").then(|| {
-                let at = lower.find("action item").unwrap_or(0);
-                clean(title[..at].trim().trim_end_matches(['-', ':']))
-            });
             columns = None;
+            last_bullet = None;
+            if let Some(at) = lower.find("action item") {
+                let owner = clean(title[..at].trim().trim_end_matches(['-', ':']));
+                section = Some(Section { level, owner });
+            } else if let Some(open) = section.as_mut().filter(|s| level > s.level) {
+                open.owner = clean(title);
+            } else {
+                section = None;
+            }
             continue;
         }
-        let Some(owner) = &section_owner else {
+        let Some(Section { owner, .. }) = &section else {
             continue;
         };
 
         if trimmed.starts_with('|') {
+            last_bullet = None;
             let row = cells(trimmed);
             if row
                 .iter()
@@ -108,7 +144,16 @@ pub fn parse_action_items(markdown: &str) -> Vec<ActionItem> {
                 .or_else(|| (0..header.len()).find(|&i| Some(i) != owner_col));
             let due_col = find(&["due", "deadline", "when"]);
             let time_col = find(&["time"]);
-            let cell = |col: Option<usize>| col.and_then(|i| row.get(i)).and_then(|c| clean(c));
+            // A stray `|` inside a quoted cell adds cells; the last column is still the last
+            let cell = |col: Option<usize>| {
+                col.and_then(
+                    |i| match row.len() > header.len() && i + 1 == header.len() {
+                        true => row.last(),
+                        false => row.get(i),
+                    },
+                )
+                .and_then(|c| clean(c))
+            };
             if let Some(task) = cell(task_col) {
                 items.push(ActionItem {
                     owner: cell(owner_col).or_else(|| owner.clone()),
@@ -126,20 +171,38 @@ pub fn parse_action_items(markdown: &str) -> Vec<ActionItem> {
             .or_else(|| trimmed.strip_prefix("+ "))
             .or_else(|| {
                 let digits = trimmed.find(|c: char| !c.is_ascii_digit())?;
-                (digits > 0).then(|| trimmed[digits..].strip_prefix(". "))?
+                let rest = &trimmed[digits..];
+                (digits > 0).then(|| rest.strip_prefix(". ").or_else(|| rest.strip_prefix(") ")))?
             });
-        if let Some(text) = bullet {
-            let text = ["[ ] ", "[x] ", "[X] "]
-                .iter()
-                .find_map(|box_| text.strip_prefix(box_))
-                .unwrap_or(text);
-            if let Some(task) = clean(text) {
-                items.push(ActionItem {
-                    owner: owner.clone(),
-                    task,
-                    due: None,
-                    timestamp: None,
-                });
+        let Some(text) = bullet else {
+            continue;
+        };
+        let text = ["[ ] ", "[x] ", "[X] "]
+            .iter()
+            .find_map(|box_| text.strip_prefix(box_))
+            .unwrap_or(text);
+        let nested = line.len() - line.trim_start().len() >= 2;
+        match (nested, last_bullet) {
+            // "  - include the timeline" belongs to the item above it
+            (true, Some(i)) => {
+                if let Some(more) = clean(text) {
+                    items[i].task = format!("{}; {}", items[i].task, more);
+                }
+            }
+            _ => {
+                let (owner, text) = match owner_prefix(text) {
+                    Some((label, words)) => (Some(label), words),
+                    None => (owner.clone(), text),
+                };
+                if let Some(task) = clean(text) {
+                    items.push(ActionItem {
+                        owner,
+                        task,
+                        due: None,
+                        timestamp: None,
+                    });
+                    last_bullet = Some(items.len() - 1);
+                }
             }
         }
     }
@@ -164,30 +227,41 @@ pub async fn api_get_project_action_items(
 }
 
 fn collect_items(
-    summaries: Vec<(String, String, String, String)>,
+    summaries: Vec<ProjectSummary>,
     done: &HashSet<(String, String)>,
 ) -> Vec<ProjectActionItem> {
     summaries
         .into_iter()
-        .flat_map(|(meeting_id, meeting_title, meeting_date, markdown)| {
-            let mut seen = HashSet::new();
-            parse_action_items(&markdown)
-                .into_iter()
-                // The same task twice in one summary is one item
-                .filter(|item| seen.insert(item_key(&item.task)))
-                .map(|item| {
-                    let key = item_key(&item.task);
-                    ProjectActionItem {
-                        done: done.contains(&(meeting_id.clone(), key.clone())),
-                        meeting_id: meeting_id.clone(),
-                        meeting_title: meeting_title.clone(),
-                        meeting_date: meeting_date.clone(),
-                        key,
-                        item,
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
+        .flat_map(
+            |(meeting_id, meeting_title, meeting_date, markdown, english)| {
+                let mut found = parse_action_items(&markdown);
+                // A translated summary's headings ("Aktionspunkte") are not found; its English
+                // original is kept next to it
+                if found.is_empty() {
+                    found = english
+                        .as_deref()
+                        .map(parse_action_items)
+                        .unwrap_or_default();
+                }
+                let mut seen = HashSet::new();
+                found
+                    .into_iter()
+                    // The same owner and task twice in one summary is one item
+                    .filter(|item| seen.insert(item_key(item)))
+                    .map(|item| {
+                        let key = item_key(&item);
+                        ProjectActionItem {
+                            done: done.contains(&(meeting_id.clone(), key.clone())),
+                            meeting_id: meeting_id.clone(),
+                            meeting_title: meeting_title.clone(),
+                            meeting_date: meeting_date.clone(),
+                            key,
+                            item,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
         .collect()
 }
 
@@ -243,7 +317,7 @@ mod tests {
     fn reads_lists_and_takes_the_owner_from_the_heading() {
         let md = "## Client Action Items\n- [ ] Send the logo files\n* Confirm budget\n\
             ## Developer Action Items\n1. Draft the scope\n2. None\n\
-            ### Next Steps\n- Not collected\n\
+            ## Next Steps\n- Not collected\n\
             **Action Items:**\n- Book the demo\n";
         assert_eq!(
             parse_action_items(md),
@@ -259,15 +333,79 @@ mod tests {
 
     #[test]
     fn marks_done_items_and_drops_duplicates() {
-        let md = "## Action Items\n- Send scope\n- send   SCOPE\n- Book demo\n".to_string();
-        let summaries = vec![("m1".into(), "Acme call".into(), "2026-11-03".into(), md)];
+        let md = "## Action Items\n- Send scope\n- send   SCOPE\n- Book demo\n\
+            ### Client\n- Send scope\n"
+            .to_string();
+        let summaries = vec![(
+            "m1".into(),
+            "Acme call".into(),
+            "2026-11-03".into(),
+            md,
+            None,
+        )];
         let done = HashSet::from([("m1".to_string(), "book demo".to_string())]);
         let items = collect_items(summaries, &done);
         let view: Vec<_> = items
             .iter()
-            .map(|i| (i.item.task.as_str(), i.done))
+            .map(|i| (i.item.owner.as_deref(), i.item.task.as_str(), i.done))
             .collect();
-        assert_eq!(view, vec![("Send scope", false), ("Book demo", true)]);
+        // Same task under another owner is its own item
+        assert_eq!(
+            view,
+            vec![
+                (None, "Send scope", false),
+                (None, "Book demo", true),
+                (Some("Client"), "Send scope", false)
+            ]
+        );
+    }
+
+    #[test]
+    fn translated_summary_falls_back_to_its_english_original() {
+        let german = "**Aktionspunkte**\n- Umfang senden\n".to_string();
+        let english = Some("**Action Items**\n- Send scope\n".to_string());
+        let summaries = vec![(
+            "m1".into(),
+            "Acme".into(),
+            "2026-11-03".into(),
+            german,
+            english,
+        )];
+        let items = collect_items(summaries, &HashSet::new());
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].item.task, "Send scope");
+    }
+
+    #[test]
+    fn sections_survive_subheadings_and_other_markup() {
+        // A deeper subheading or bold line inside the section names the owner
+        let md = "## Action Items\n### Saleh\n- Send scope\n**Priya**\n1) Share assets\n\
+            - **Omar:** Book the demo\n  - include the agenda\n## Notes\n- not collected\n\
+            **Action Items**:\n- Colon outside the bold\n";
+        assert_eq!(
+            parse_action_items(md),
+            vec![
+                item(Some("Saleh"), "Send scope", None, None),
+                item(Some("Priya"), "Share assets", None, None),
+                item(
+                    Some("Omar"),
+                    "Book the demo; include the agenda",
+                    None,
+                    None
+                ),
+                item(None, "Colon outside the bold", None, None),
+            ]
+        );
+        // A quoted `|` in the transcript cell does not move the time column
+        let table = "**Action Items**\n| Owner | Task | Due | Reference | Time |\n| --- | --- | --- | --- | --- |\n\
+            | Saleh | Send scope | Fri | \"[02:52] A | B\" | 02:52 |\n| Priya | Pay \\| invoice | - | x | 03:10 |\n";
+        assert_eq!(
+            parse_action_items(table),
+            vec![
+                item(Some("Saleh"), "Send scope", Some("Fri"), Some("02:52")),
+                item(Some("Priya"), "Pay | invoice", None, Some("03:10")),
+            ]
+        );
     }
 
     #[tokio::test]

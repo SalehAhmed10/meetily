@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -25,15 +25,19 @@ function ProjectActionsContent() {
   const project = projects.find(p => p.id === projectId);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [showDone, setShowDone] = useState(false);
+  const [saving, setSaving] = useState<Set<string>>(new Set());
+  const latestRequest = useRef(0);
 
   const fetchItems = useCallback(async () => {
     if (!projectId) return;
+    // Only the newest request may update the page (switching projects quickly)
+    const request = ++latestRequest.current;
     setLoad({ state: "loading" });
     try {
       const items = await invoke<ProjectActionItem[]>("api_get_project_action_items", { projectId });
-      setLoad({ state: "ready", items });
+      if (request === latestRequest.current) setLoad({ state: "ready", items });
     } catch (error) {
-      setLoad({ state: "error", message: String(error) });
+      if (request === latestRequest.current) setLoad({ state: "error", message: String(error) });
     }
   }, [projectId]);
 
@@ -63,14 +67,25 @@ function ProjectActionsContent() {
         : prev,
     );
 
+  const savingId = (item: ProjectActionItem) => `${item.meeting_id}\n${item.key}`;
+
   const toggle = async (target: ProjectActionItem) => {
+    const id = savingId(target);
+    if (saving.has(id)) return; // one save per item at a time, so saves cannot land out of order
     const done = !target.done;
+    setSaving(prev => new Set(prev).add(id));
     setItemDone(target, done);
     try {
       await invoke("api_set_action_item_done", { meetingId: target.meeting_id, key: target.key, done });
     } catch (error) {
       setItemDone(target, !done); // put it back so the list matches what is saved
       toast.error("Could not update the action item", { description: String(error) });
+    } finally {
+      setSaving(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -163,6 +178,7 @@ function ProjectActionsContent() {
                       <input
                         type="checkbox"
                         checked={item.done}
+                        disabled={saving.has(savingId(item))}
                         onChange={() => void toggle(item)}
                         className="mt-0.5 size-4 shrink-0 accent-blue-600"
                       />
