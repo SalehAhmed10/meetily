@@ -225,12 +225,22 @@ fn docx_transcript(text: &str) -> (String, &'static str) {
                 && parse_timestamp(b.split_whitespace().next().unwrap_or("")).is_some()
         })
     };
-    if text.lines().any(is_cue_timing) {
-        let cues = text
-            .lines()
-            .map(|l| {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if lines.iter().any(|l| is_cue_timing(l)) {
+        let cues = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let after_timing = i > 0 && is_cue_timing(lines[i - 1]);
+                let words_follow = lines.get(i + 1).is_some_and(|next| !is_cue_timing(next));
                 if is_cue_timing(l) {
                     format!("\n{l}")
+                } else if after_timing && words_follow {
+                    format!("{l}:") // Teams puts the speaker on the line after the timing
                 } else {
                     l.to_string()
                 }
@@ -246,11 +256,6 @@ fn docx_transcript(text: &str) -> (String, &'static str) {
         (time.contains(':') && !name.is_empty() && parse_timestamp(time).is_some())
             .then(|| (name.to_string(), time.to_string()))
     };
-    let lines: Vec<&str> = text
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect();
     // Only a transcript where these headers are about every other line; notes that merely
     // end in a time ("Call moved to 10:30") are left alone
     let headers = lines
@@ -525,8 +530,8 @@ mod tests {
         assert_eq!(
             parse_transcript(&content, format),
             vec![
-                ("Saleh Ahmed Hello".to_string(), Some(0.0), Some(5.2)),
-                ("Priya Hi".to_string(), Some(5.2), Some(9.0)),
+                ("Saleh Ahmed: Hello".to_string(), Some(0.0), Some(5.2)),
+                ("Priya: Hi".to_string(), Some(5.2), Some(9.0)),
             ]
         );
         // An arrow in ordinary text is not a cue

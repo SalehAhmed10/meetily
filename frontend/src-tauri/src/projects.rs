@@ -33,9 +33,20 @@ pub async fn api_create_project(
     name: String,
 ) -> Result<Project, String> {
     let name = validated_name(&name)?;
-    ProjectsRepository::create(state.db_manager.pool(), name)
+    let pool = state.db_manager.pool();
+    let project = ProjectsRepository::create(pool, name)
         .await
-        .map_err(|e| describe(e, name))
+        .map_err(|e| describe(e, name))?;
+    file_meetings_naming(pool, &project.id).await;
+    Ok(project)
+}
+
+/// Files existing meetings that name the project; a failure here is logged, not returned,
+/// since the project change itself succeeded.
+async fn file_meetings_naming(pool: &sqlx::SqlitePool, project_id: &str) {
+    if let Err(e) = ProjectsRepository::file_meetings_naming(pool, project_id).await {
+        log::warn!("Could not file meetings into the project: {}", e);
+    }
 }
 
 #[tauri::command]
@@ -45,8 +56,12 @@ pub async fn api_rename_project(
     name: String,
 ) -> Result<(), String> {
     let name = validated_name(&name)?;
-    match ProjectsRepository::rename(state.db_manager.pool(), &project_id, name).await {
-        Ok(true) => Ok(()),
+    let pool = state.db_manager.pool();
+    match ProjectsRepository::rename(pool, &project_id, name).await {
+        Ok(true) => {
+            file_meetings_naming(pool, &project_id).await;
+            Ok(())
+        }
         Ok(false) => Err("Project not found".to_string()),
         Err(e) => Err(describe(e, name)),
     }

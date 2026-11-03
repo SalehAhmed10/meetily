@@ -106,6 +106,34 @@ impl ProjectsRepository {
                 > 0;
         Ok(filed.then(|| project.id.clone()))
     }
+
+    /// Files the meetings without a project whose title names this project (by the same
+    /// rule as auto_assign); run after the project is created or renamed. Meetings that name
+    /// a different project are left alone. Returns how many were filed.
+    pub async fn file_meetings_naming(
+        pool: &SqlitePool,
+        project_id: &str,
+    ) -> Result<u64, sqlx::Error> {
+        let projects = Self::list(pool).await?;
+        let unassigned: Vec<(String, String)> =
+            sqlx::query_as("SELECT id, title FROM meetings WHERE project_id IS NULL")
+                .fetch_all(pool)
+                .await?;
+        let mut filed = 0;
+        for (meeting_id, title) in unassigned {
+            if project_named_in(&title, &projects).is_some_and(|p| p.id == project_id) {
+                filed += sqlx::query(
+                    "UPDATE meetings SET project_id = ? WHERE id = ? AND project_id IS NULL",
+                )
+                .bind(project_id)
+                .bind(&meeting_id)
+                .execute(pool)
+                .await?
+                .rows_affected();
+            }
+        }
+        Ok(filed)
+    }
 }
 
 /// The project whose name appears in the title as a whole word, ignoring case. The longest
@@ -295,6 +323,48 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn creating_or_renaming_a_project_files_meetings_that_name_it() {
+        let pool = pool_with_meeting().await;
+        for (id, title) in [
+            ("m-acme", "Acme kickoff"),
+            ("m-beta", "Beta sync"),
+            ("m-none", "Standup"),
+        ] {
+            sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, '2026-11-03', '2026-11-03')")
+                .bind(id)
+                .bind(title)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let beta = ProjectsRepository::create(&pool, "Beta").await.unwrap();
+        let acme = ProjectsRepository::create(&pool, "Acme").await.unwrap();
+        // Only meetings naming Acme are filed by Acme's creation; Beta's stays unassigned
+        assert_eq!(
+            ProjectsRepository::file_meetings_naming(&pool, &acme.id)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(project_of(&pool, "m-acme").await, Some(acme.id.clone()));
+        assert_eq!(project_of(&pool, "m-beta").await, None);
+        assert_eq!(project_of(&pool, "m-none").await, None);
+
+        // Renaming a project to a name in a title files that meeting
+        ProjectsRepository::rename(&pool, &beta.id, "Standup")
+            .await
+            .unwrap();
+        assert_eq!(
+            ProjectsRepository::file_meetings_naming(&pool, &beta.id)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(project_of(&pool, "m-none").await, Some(beta.id));
+        assert_eq!(project_of(&pool, "m-acme").await, Some(acme.id)); // never moved
     }
 
     #[tokio::test]
